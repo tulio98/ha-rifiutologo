@@ -1,0 +1,32 @@
+name: Un comune si comporta diversamente
+description: Etichette, orari o frazioni diversi da quelli attesi
+labels: ["comune"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Il gestore usa etichette e orari diversi da comune a comune: a Padova
+        «Carta», altrove «Carta e cartone»; a Padova si espone dalle 20:00 alle
+        24:00, altrove «entro le 04:00». Serve sapere com'è dalle tue parti.
+  - type: input
+    id: comune
+    attributes:
+      label: Comune
+    validations:
+      required: true
+  - type: textarea
+    id: uscita
+    attributes:
+      label: Uscita dello script di prova
+      description: >-
+        `python3 scripts/prova_api.py <Comune> "<VIA>" <civico>`.
+        Togli pure la riga della via prima di incollare.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: differenza
+    attributes:
+      label: Che cosa non torna
+    validations:
+      required: true

@@ -1,0 +1,46 @@
+name: Malfunzionamento
+description: Qualcosa non funziona come dovrebbe
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Prima di aprire: se le entità sono vuote, prova il tuo indirizzo con
+        `python3 scripts/prova_api.py <Comune> "<VIA IN MAIUSCOLO>" <civico>`.
+        Se risponde «nessuna raccolta porta a porta», non è un difetto: quell'indirizzo
+        è servito da cassonetti stradali e il gestore non pubblica un calendario.
+  - type: input
+    id: comune
+    attributes:
+      label: Comune
+      description: Solo il comune. Non scrivere via e civico da nessuna parte.
+      placeholder: Padova
+    validations:
+      required: true
+  - type: input
+    id: versioni
+    attributes:
+      label: Versione di Home Assistant e dell'integrazione
+      placeholder: "HA 2026.9.0 — Il Rifiutologo 0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: cosa
+    attributes:
+      label: Che cosa succede, e che cosa ti aspettavi
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostica
+    attributes:
+      label: Diagnostica
+      description: >-
+        Impostazioni → Dispositivi e servizi → Il Rifiutologo → i tre puntini →
+        Scarica diagnostica. Via e civico sono oscurati automaticamente.
+      render: json
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: Le righe che contengono `rifiutologo`.
+      render: shell
