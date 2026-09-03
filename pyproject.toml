@@ -1,3 +1,8 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+norecursedirs = [".git"]
+
 [tool.ruff]
 target-version = "py313"
 line-length = 88
@@ -24,6 +29,11 @@ ignore = [
   # di questo progetto sono in italiano e la regola non ha modo di valutarli.
   "D401",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# In un test il valore letterale nell'asserzione E' la specifica: estrarlo in
+# una costante allontana il numero dalla cosa che sta verificando.
+"tests/*" = ["PLR2004"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"

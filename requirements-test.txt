@@ -1,0 +1,4 @@
+# Questa libreria si porta dietro la SUA versione di Home Assistant: e' pinnata
+# di proposito, cosi' la CI verifica sempre contro la stessa base. Alzandola si
+# alza anche la versione di Home Assistant contro cui girano i test.
+pytest-homeassistant-custom-component==0.13.316

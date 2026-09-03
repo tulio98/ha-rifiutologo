@@ -1,0 +1,27 @@
+[
+ {
+  "id": 312,
+  "name": "Abano Terme",
+  "provincia": "PD"
+ },
+ {
+  "id": 8,
+  "name": "Bologna",
+  "provincia": "BO"
+ },
+ {
+  "id": 75,
+  "name": "Faenza",
+  "provincia": "RA"
+ },
+ {
+  "id": 372,
+  "name": "Padova",
+  "provincia": "PD"
+ },
+ {
+  "id": 424,
+  "name": "Trieste",
+  "provincia": "TS"
+ }
+]

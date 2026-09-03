@@ -1,0 +1,365 @@
+{
+ "notaPap": "",
+ "calendario": [
+  {
+   "idGiorno": "4",
+   "data": "2026-09-03T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "701100"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "7",
+   "data": "2026-09-06T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "701100"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "2",
+   "data": "2026-09-08T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 13,
+      "descrizione": "Indifferenziato",
+      "pittogramma": {
+       "nomeFile": "img7653",
+       "colore": "7C7C81"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    },
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "701100"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "3",
+   "data": "2026-09-09T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 68,
+      "descrizione": "Carta",
+      "pittogramma": {
+       "nomeFile": "img8485",
+       "colore": "0093D0"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "4",
+   "data": "2026-09-10T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "701100"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "7",
+   "data": "2026-09-13T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "701100"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "1",
+   "data": "2026-09-14T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 95,
+      "descrizione": "Imballaggi in vetro",
+      "pittogramma": {
+       "nomeFile": "vetro_aaa",
+       "colore": "15A53F"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "2",
+   "data": "2026-09-15T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 13,
+      "descrizione": "Indifferenziato",
+      "pittogramma": {
+       "nomeFile": "img7653",
+       "colore": "7C7C81"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    },
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "701100"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "3",
+   "data": "2026-09-16T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 18,
+      "descrizione": "Lattine",
+      "pittogramma": {
+       "nomeFile": "img6652",
+       "colore": "FDB913"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    },
+    {
+     "macroprodotto": {
+      "id": 96,
+      "descrizione": "Imballaggi in plastica",
+      "pittogramma": {
+       "nomeFile": "img6665",
+       "colore": "FDB913"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "4",
+   "data": "2026-09-17T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "701100"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "7",
+   "data": "2026-09-20T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "701100"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "2",
+   "data": "2026-09-22T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 13,
+      "descrizione": "Indifferenziato",
+      "pittogramma": {
+       "nomeFile": "img7653",
+       "colore": "7C7C81"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    },
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "701100"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "24:00",
+     "orario": "dalle 20:00 alle 24:00",
+     "oraInizioRaccolta": "05:00",
+     "oraFineRaccolta": "05:00",
+     "orarioRaccolta": "dalle 05:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  }
+ ]
+}

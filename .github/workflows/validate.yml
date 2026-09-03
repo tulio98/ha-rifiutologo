@@ -40,3 +40,15 @@ jobs:
       - uses: astral-sh/ruff-action@v3
         with:
           args: format --check
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -r requirements-test.txt
+      - run: pytest --cov=custom_components.rifiutologo --cov-report=term-missing
