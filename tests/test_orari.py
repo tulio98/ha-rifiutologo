@@ -22,6 +22,7 @@ from custom_components.rifiutologo.orari import (
     istante,
     prossima_raccolta,
     prossimo_confine,
+    solo_aperti,
 )
 from homeassistant.core import HomeAssistant
 
@@ -256,7 +257,7 @@ async def test_prossima_raccolta_non_guarda_mai_indietro() -> None:
     # Cosa posso ancora esporre: la roba di ieri sera, la finestra e' aperta.
     assert giorno_in_corso(calendario, alle_due) is sei
     # Qual e' la prossima raccolta: quella di oggi, non quella di ieri.
-    assert prossima_raccolta(calendario, alle_due.date()) is sette
+    assert prossima_raccolta(calendario, alle_due) is sette
 
 
 async def test_apertura_non_scambia_una_scadenza_per_un_inizio() -> None:
@@ -363,3 +364,101 @@ async def test_il_confine_tiene_conto_anche_dell_apertura() -> None:
     assert prossimo_confine(
         calendario, datetime(2026, 9, 3, 18, 0, tzinfo=ROMA)
     ) == datetime(2026, 9, 3, 20, 0, tzinfo=ROMA)
+
+
+@pytest.mark.parametrize(
+    ("orario", "atteso"),
+    [
+        ("dalle 20:00", 20 * 60),
+        ("Dalle 20:00 in poi", 20 * 60),
+        ("entro le 04:00", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_dalle_e_unapertura_entro_e_un_termine(
+    orario: str | None, atteso: int | None
+) -> None:
+    """Con inizio uguale a fine e' il TESTO del gestore a dire che cosa sia.
+
+    Censiti sul backend: 1382 conferimenti "dalle HH:MM" (un'apertura) e 5836
+    "entro le HH:MM" (un termine). Trattarli tutti come termini faceva dire al
+    sensore mezzanotte invece delle 20:00.
+    """
+    ora = "20:00" if (orario or "").strip().casefold().startswith("dalle") else "04:00"
+    conferimento = api.Conferimento(
+        frazione="x",
+        macroprodotto_id=1,
+        colore=None,
+        ora_inizio=ora,
+        ora_fine=ora,
+        orario=orario,
+        orario_raccolta=None,
+        straordinario=False,
+        note=None,
+    )
+    assert conferimento.apertura_dichiarata == atteso
+
+
+def test_giorno_senza_conferimenti_non_solleva() -> None:
+    """`GiornoRaccolta` e' pubblica: un giorno vuoto non deve far esplodere max()."""
+    vuoto = api.GiornoRaccolta(giorno=date(2026, 9, 3), conferimenti=())
+    assert vuoto.chiusura_minuti == 24 * 60
+    assert vuoto.apertura_minuti is None
+
+
+async def test_nessuna_fascia_morta_a_modena() -> None:
+    """Dove la finestra chiude prima di mezzanotte le due nozioni non si contraddicono.
+
+    Modena espone "dalle 00:00 alle 07:00": dalle 07:00 a mezzanotte la raccolta
+    di oggi e' chiusa. Prima, `prossima_raccolta` ragionava per data e diceva
+    "oggi, fra zero giorni" mentre il sensore dell'esposizione era gia' spento.
+    """
+    calendario = _calendario("calendario_modena")
+    primo = calendario.giorni[0]
+    assert primo.chiusura_minuti == 7 * 60, "la finestra chiude alle 07:00"
+
+    prima = istante(primo.giorno, 3 * 60)  # le 03:00, finestra aperta
+    assert giorno_in_corso(calendario, prima) is primo
+    assert prossima_raccolta(calendario, prima) is primo
+
+    dopo = istante(primo.giorno, 10 * 60)  # le 10:00, finestra chiusa
+    in_corso = giorno_in_corso(calendario, dopo)
+    prossima = prossima_raccolta(calendario, dopo)
+    assert in_corso is not primo
+    assert prossima is not primo, "non puo' dire 'oggi' con la finestra gia' chiusa"
+    assert in_corso is prossima, "le due non si contraddicono"
+
+
+async def test_solo_aperti_a_gradara() -> None:
+    """In una sera con due finestre, quella scaduta non va piu' elencata.
+
+    Gradara: Carta "dalle 20:00 alle 23:00", Organico "dalle 20:00 alle 06:00".
+    """
+    calendario = _calendario("calendario_gradara")
+    # La sera che interessa e' quella con due finestre DIVERSE, non due frazioni:
+    # i nomi cambiano di settimana in settimana, la forma no.
+    sera = next(
+        g
+        for g in calendario.giorni
+        if len({c.fine_minuti_effettiva for c in g.conferimenti}) > 1
+    )
+    breve = min(c.fine_minuti_effettiva for c in sera.conferimenti)
+    lunga = max(c.fine_minuti_effettiva for c in sera.conferimenti)
+    assert breve == 23 * 60, "una chiude alle 23:00"
+    assert lunga == 30 * 60, "l'altra alle 06:00 del giorno dopo"
+    superstite = next(
+        c.frazione for c in sera.conferimenti if c.fine_minuti_effettiva == lunga
+    )
+
+    assert solo_aperti(sera, istante(sera.giorno, 22 * 60)) is sera, (
+        "prima delle 23:00 ci sono entrambe"
+    )
+
+    rimaste = solo_aperti(sera, istante(sera.giorno, 24 * 60 + 30))
+    assert rimaste is not None
+    assert rimaste.frazioni == [superstite], "quella delle 23:00 e' scaduta"
+
+    assert solo_aperti(sera, istante(sera.giorno, 31 * 60)) is None, (
+        "dopo le 06:00 non c'e' piu' niente da esporre"
+    )

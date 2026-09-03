@@ -26,6 +26,13 @@ jobs:
       # action passi senza errori E senza ignore. Il check "brands" e' gia'
       # soddisfatto dall'icona versionata in custom_components/rifiutologo/brand/,
       # che il validatore cerca in locale prima di rivolgersi a brands.home-assistant.io.
+      #
+      # Attenzione: 4 dei 10 check leggono i METADATI del repository su GitHub, non
+      # i file. Servono una descrizione, le issue abilitate e almeno un topic - e i
+      # topic generici non contano: TOPIC_FILTER in hacs/integration scarta fra gli
+      # altri "hacs", "home-assistant" e "home-assistant-custom". Qui sopravvivono
+      # "italy", "waste-collection" e "rifiuti". Vanno impostati PRIMA del primo
+      # push, o la primissima esecuzione nasce rossa senza motivo.
       - uses: hacs/action@main
         with:
           category: integration

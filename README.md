@@ -93,13 +93,24 @@ perché il gestore lo dichiara in tre modi. Sono tutti e tre verificati sul back
 |---|---|---|
 | Finestra dentro la giornata | **Padova** `20:00 → 24:00` | Evento dalle 20:00 alla mezzanotte |
 | Finestra che **scavalca la mezzanotte** | **Bologna** `20:00 → 06:00` | Evento fino alle 06:00 **del giorno dopo**; alle due di notte il sensore è ancora acceso |
-| Inizio uguale a fine | **Faenza** `04:00 → 04:00`, testo *«entro le 04:00»* | Non è una durata, è una scadenza: l'evento resta **giornaliero** e la frase esatta del gestore finisce nella descrizione |
+| Inizio uguale a fine, testo *«entro le…»* | **Faenza** `04:00 → 04:00`, *«entro le 04:00»* | È una **scadenza**, non una durata: l'evento resta giornaliero e la frase esatta del gestore finisce nella descrizione |
+| Inizio uguale a fine, testo *«dalle…»* | `20:00 → 20:00`, *«dalle 20:00»* | È un'**apertura** senza chiusura dichiarata: le 20:00 valgono come inizio, ma l'evento resta giornaliero |
 
-Il terzo caso merita una riga in più: inventare una finestra di 24 ore sarebbe stato comodo e
-sbagliato. Quando il gestore non dichiara una durata, l'integrazione non se la fabbrica.
+Gli ultimi due casi hanno la stessa forma numerica e significato opposto: a distinguerli è
+**il testo che scrive il gestore**, non un'ipotesi. Censendo il backend, la forma
+`inizio = fine` compare 5.836 volte come «entro le» e 1.382 volte come «dalle».
+E quando il gestore non dichiara una durata, l'integrazione non se la fabbrica.
 
-Conseguenza pratica: **il sensore «Raccolta stasera» si spegne alla chiusura della finestra,
-non a mezzanotte.** A Padova coincidono; a Bologna no.
+Conseguenze pratiche, tutte e tre da tenere a mente:
+
+1. **«Raccolta stasera» si spegne alla chiusura della finestra, non a mezzanotte.** A Padova
+   coincidono; a Bologna no.
+2. **Anche «Prossima raccolta» guarda la finestra**, non solo la data. A Modena si espone
+   *dalle 00:00 alle 07:00*: dalle 07:00 in poi la raccolta di oggi è chiusa, e dire «fra 0
+   giorni» mentre il sensore dell'esposizione è spento sarebbero due entità che si
+   contraddicono.
+3. **Le frazioni scadute spariscono dall'elenco.** A Gradara una frazione chiude alle 23:00 e
+   l'altra alle 06:00: dopo le 23:00 «Da esporre stasera» nomina solo la seconda.
 
 E da qui nasce una distinzione che vale la pena tenere a mente, perché le due entità
 rispondono a due domande diverse:
@@ -107,7 +118,9 @@ rispondono a due domande diverse:
 - **«Raccolta stasera»** e **«Da esporre stasera»** dicono *che cosa si può ancora mettere
   fuori adesso*. A Bologna, alle due di notte, parlano ancora della sera prima — ed è giusto.
 - **«Prossima raccolta»**, **«Prossima esposizione»** e **«Giorni alla prossima»** guardano
-  solo in avanti, da oggi. Non mostrano mai una data passata.
+  solo in avanti: la prima raccolta la cui data non è passata **e** la cui finestra non è
+  ancora chiusa. Non mostrano mai una data passata, e non dicono mai «oggi» quando per oggi
+  non c'è più niente da fare.
 
 ## Chi è coperto
 

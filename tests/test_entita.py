@@ -44,6 +44,11 @@ async def _avvia(hass: HomeAssistant, voce: MockConfigEntry) -> None:
     await hass.async_block_till_done()
 
 
+def coordinator_chiavi(hass: HomeAssistant, voce: MockConfigEntry) -> dict[str, str]:
+    """La mappa frazione -> chiave stabile, come la vede il coordinator."""
+    return voce.runtime_data.data.chiavi_frazione
+
+
 def _stato(hass: HomeAssistant, voce: MockConfigEntry, piattaforma: str, chiave: str):
     """Ritrova lo stato di un'entita' partendo dal suo unique_id."""
     registro = er.async_get(hass)
@@ -225,11 +230,17 @@ async def test_calendari_per_frazione(
     ]
     # Quello complessivo piu' uno per ogni frazione presente nelle fixture.
     assert len(calendari) > 1
+    # Le chiavi sono gli id dei macroprodotti, non lo slug del nome: non
+    # dipendono dall'ordine in cui il gestore elenca le frazioni.
+    chiavi = coordinator_chiavi(hass, voce)
+    assert set(chiavi) >= {"Organico", "Imballaggi in vetro"}
     unici = {e.unique_id for e in calendari}
-    assert f"{voce.entry_id}_calendario_organico" in unici
-    assert f"{voce.entry_id}_calendario_imballaggi_in_vetro" in unici
+    for frazione in ("Organico", "Imballaggi in vetro"):
+        assert f"{voce.entry_id}_calendario_{chiavi[frazione]}" in unici
 
-    vetro = _stato(hass, voce, "calendar", "calendario_imballaggi_in_vetro")
+    vetro = _stato(
+        hass, voce, "calendar", f"calendario_{chiavi['Imballaggi in vetro']}"
+    )
     assert vetro.attributes["message"] == "Imballaggi in vetro"
 
 
@@ -453,8 +464,9 @@ async def test_le_frazioni_assenti_non_vengono_cancellate(
     assert len(prima) == 7
 
     # L'utente rinomina un'entita': e' la cosa che si perderebbe.
+    chiavi = coordinator_chiavi(hass, voce)
     carta = registro.async_get_entity_id(
-        "calendar", DOMAIN, f"{voce.entry_id}_calendario_carta"
+        "calendar", DOMAIN, f"{voce.entry_id}_calendario_{chiavi['Carta']}"
     )
     registro.async_update_entity(carta, name="La carta di casa")
 
@@ -505,8 +517,78 @@ async def test_frazioni_che_collidono_restano_due_entita(
         for e in er.async_entries_for_config_entry(registro, voce.entry_id)
         if e.domain == "calendar"
     }
-    # I due nomi che collidono ottengono chiavi diverse: nessuno dei due sparisce.
-    assert f"{voce.entry_id}_calendario_carta_e_cartone" in chiavi
-    assert f"{voce.entry_id}_calendario_carta_e_cartone_2" in chiavi
-    # E la frazione "Carta" delle altre sere resta la sua.
-    assert f"{voce.entry_id}_calendario_carta" in chiavi
+    # Le due frazioni che condividono la chiave stabile ne ottengono comunque
+    # due diverse: nessuna delle due sparisce, che era il difetto.
+    per_frazione = [c for c in chiavi if c != f"{voce.entry_id}_calendario"]
+    assert len(per_frazione) == len(set(per_frazione))
+    nomi = {
+        s.attributes.get("friendly_name", "") for s in hass.states.async_all("calendar")
+    }
+    assert any("Carta e cartone" in n for n in nomi)
+    assert any("Carta-e-cartone" in n for n in nomi)
+
+
+async def test_niente_fascia_morta_a_modena(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Due entita' dello stesso dispositivo non devono contraddirsi.
+
+    Modena espone "dalle 00:00 alle 07:00". Dalle 07:00 a mezzanotte - 17 ore su
+    24 - il sensore dell'esposizione e' spento; prima, «giorni alla prossima»
+    diceva 0 lo stesso, perche' ragionava per data e non per finestra.
+    """
+    registra(aioclient_mock, calendario="calendario_modena", allegati="allegati_modena")
+    freezer.move_to(datetime(2026, 9, 3, 10, 0, tzinfo=ROMA))
+    await _avvia(hass, voce)
+
+    acceso = _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_ON
+    giorni = int(_stato(hass, voce, "sensor", "giorni_alla_prossima").state)
+    assert not acceso, "alle 10:00 la finestra delle 00:00-07:00 e' chiusa"
+    assert giorni > 0, "e allora non puo' dire che la prossima e' oggi"
+
+    prossima = _stato(hass, voce, "sensor", "prossima_raccolta").state
+    assert prossima > "2026-09-03", f"prossima raccolta e' {prossima}, cioe' oggi"
+
+    # E dentro la finestra le due tornano d'accordo.
+    freezer.move_to(datetime(2026, 9, 3, 3, 0, tzinfo=ROMA))
+    await hass.config_entries.async_reload(voce.entry_id)
+    await hass.async_block_till_done()
+    assert _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_ON
+    assert _stato(hass, voce, "sensor", "giorni_alla_prossima").state == "0"
+
+
+async def test_gradara_smette_di_elencare_la_frazione_scaduta(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """In una sera con due finestre, quella scaduta sparisce dall'elenco.
+
+    Gradara: una frazione chiude alle 23:00, l'altra alle 06:00 del giorno dopo.
+    """
+    registra(
+        aioclient_mock, calendario="calendario_gradara", allegati="allegati_gradara"
+    )
+    # L'8 settembre e' la sera con due finestre diverse: Indifferenziato fino
+    # alle 23:00, Organico fino alle 06:00 del giorno dopo.
+    freezer.move_to(datetime(2026, 9, 8, 22, 0, tzinfo=ROMA))
+    await _avvia(hass, voce)
+
+    binario = _stato(hass, voce, "binary_sensor", "esporre_stasera")
+    entrambe = set(binario.attributes["frazioni"])
+    assert entrambe == {"Indifferenziato", "Organico"}
+
+    # Passata la mezzanotte: chi chiudeva alle 23:00 non e' piu' esponibile.
+    dopo = datetime(2026, 9, 9, 0, 30, tzinfo=ROMA)
+    freezer.move_to(dopo)
+    async_fire_time_changed(hass, dopo)
+    await hass.async_block_till_done()
+
+    binario = _stato(hass, voce, "binary_sensor", "esporre_stasera")
+    assert binario.state == STATE_ON, "una finestra e' ancora aperta"
+    rimaste = set(binario.attributes["frazioni"])
+    assert rimaste == {"Organico"}, (
+        f"l'Indifferenziato e' scaduto alle 23:00: {rimaste}"
+    )
+    # E l'orario elencato e' solo quello di chi e' rimasto.
+    assert set(binario.attributes["orari_esposizione"]) == rimaste
+    testo = _stato(hass, voce, "sensor", "esposizione_stasera").state
+    assert set(testo.split(", ")) == rimaste

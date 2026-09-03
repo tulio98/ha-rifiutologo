@@ -8,12 +8,13 @@ from typing import Any
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .api import GiornoRaccolta
 from .const import icona_per_frazione
 from .coordinator import RifiutologoConfigEntry, RifiutologoCoordinator
 from .entity import RifiutologoEntity, attributi_giorno
-from .orari import apertura
+from .orari import apertura, solo_aperti
 
 NESSUNA = "nessuna"
 LUNGHEZZA_MASSIMA_STATO = 255
@@ -58,9 +59,14 @@ class _SensoreBase(RifiutologoEntity, SensorEntity):
         mezzanotte, alle due di notte si e' ancora in tempo per esporre la
         raccolta di ieri sera, e quella e' la risposta giusta alla domanda
         "che cosa metto fuori adesso".
+
+        E si tengono solo le frazioni la cui finestra e' ancora aperta: in una
+        sera con orari diversi, quella che chiude prima non va piu' elencata.
         """
         giorno = self.coordinator.attuale
-        return giorno if giorno is not None and giorno.giorno <= self._oggi else None
+        if giorno is None or giorno.giorno > self._oggi:
+            return None
+        return solo_aperti(giorno, dt_util.now())
 
 
 class SensoreEsposizioneStasera(_SensoreBase):
@@ -165,9 +171,9 @@ class SensoreGiorniAllaProssima(_SensoreBase):
         giorno = self._prossimo_giorno
         if giorno is None:
             return None
-        # Non scende sotto zero: con la finestra ancora aperta alle due di notte
-        # la risposta giusta e' "adesso", non "meno un giorno".
-        return max(0, (giorno.giorno - self._oggi).days)
+        # Non puo' essere negativo: `prossima` esclude per costruzione i giorni
+        # gia' passati. Zero vuol dire stasera.
+        return (giorno.giorno - self._oggi).days
 
 
 class SensoreZona(_SensoreBase):

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import logging
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -16,11 +17,11 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.rifiutologo import coordinator as modulo
 from custom_components.rifiutologo.api import BASE_URL
 from custom_components.rifiutologo.const import (
-    CADENZA_RIALLINEAMENTO,
     CONF_CIVICO_ID,
     DOMAIN,
     UPDATE_INTERVAL_HOURS,
 )
+from custom_components.rifiutologo.coordinator import INTERVALLO_RIALLINEAMENTO
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_ON, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
@@ -149,10 +150,9 @@ async def test_il_riallineamento_torna_a_riprovare(
 ) -> None:
     """La rete di sicurezza non deve consumarsi al primo calendario vuoto.
 
-    Un indirizzo senza porta a porta produce un calendario vuoto per sempre, e
-    prima bastava quello per bruciare il tentativo: il giorno in cui il gestore
-    rinumerava davvero, nessuno se ne accorgeva piu' fino al riavvio di Home
-    Assistant. Ora si riprova a cadenza.
+    Il freno e' sul TEMPO: contando i vuoti consecutivi, un backend che alterna
+    pieno e vuoto azzerava il contatore a ogni giro e pagava un riallineamento a
+    ogni singolo vuoto isolato.
     """
     freezer.move_to(SERA_DI_RACCOLTA)
     registra(aioclient_mock, calendario="calendario_vuoto", allegati="allegati_vuoti")
@@ -178,12 +178,55 @@ async def test_il_riallineamento_torna_a_riprovare(
         await hass.async_block_till_done()
     assert tentativi() == 1, "fra un tentativo e l'altro deve passare del tempo"
 
-    # Superata la cadenza, ci riprova.
-    for _ in range(CADENZA_RIALLINEAMENTO):
+    # Passato l'intervallo, ci riprova.
+    freezer.tick(INTERVALLO_RIALLINEAMENTO)
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert tentativi() >= 2, "la rete di sicurezza deve tornare disponibile"
+
+
+async def test_alternare_pieno_e_vuoto_non_moltiplica_i_tentativi(
+    hass: HomeAssistant, aioclient_mock, freezer
+) -> None:
+    """Un backend che sfarfalla non deve costare un riallineamento a ogni vuoto.
+
+    Col freno sui vuoti CONSECUTIVI ogni vuoto isolato era il primo della sua
+    serie, quindi sempre gratuito: meno vuoti costavano piu' rete di sicurezza.
+    """
+    freezer.move_to(SERA_DI_RACCOLTA)
+    registra(aioclient_mock)
+    voce = MockConfigEntry(
+        domain=DOMAIN, title="prova", data=DATI, unique_id="372-26863-1328844"
+    )
+    await hass.config.async_set_time_zone("Europe/Rome")
+    voce.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    def tentativi() -> int:
+        return sum(1 for c in aioclient_mock.mock_calls if "getComuni.php" in str(c[1]))
+
+    assert tentativi() == 0, "con il calendario pieno non si tenta niente"
+
+    # Sei giri alternati pieno/vuoto, tutti dentro l'intervallo di guardia.
+    for giro in range(6):
+        aioclient_mock.clear_requests()
+        vuoto = giro % 2 == 0
+        registra(
+            aioclient_mock,
+            calendario="calendario_vuoto" if vuoto else "calendario",
+            allegati="allegati_vuoti" if vuoto else "allegati",
+        )
         freezer.tick(timedelta(hours=UPDATE_INTERVAL_HOURS + 1))
         async_fire_time_changed(hass)
         await hass.async_block_till_done()
-    assert tentativi() >= 2, "la rete di sicurezza deve tornare disponibile"
+
+    # Il conteggio riparte da zero dopo ogni clear_requests: quel che conta e'
+    # che l'ultimo giro vuoto non abbia tentato, perche' l'intervallo non e'
+    # ancora passato dal primo.
+    assert tentativi() == 0, (
+        "dopo il primo tentativo si aspetta, comunque vadano i dati"
+    )
 
 
 async def test_identificativi_inutili_non_vengono_adottati(
@@ -269,10 +312,10 @@ async def test_la_rete_di_sicurezza_non_puo_far_cadere_lo_scarico(
     assert coordinator._id_riallineati is None
 
 
-async def test_il_contatore_dei_vuoti_riparte_dopo_un_recupero(
+async def test_il_freno_del_riallineamento_e_sul_tempo(
     hass: HomeAssistant, aioclient_mock, freezer
 ) -> None:
-    """Un vuoto isolato non deve sfasare la cadenza per tutta la sessione.
+    """Il marcatore del riallineamento e' un istante, non un conteggio.
 
     Se il contatore contasse i vuoti cumulativi invece che quelli consecutivi,
     il giorno in cui il gestore rinumera davvero la rete di sicurezza
@@ -289,25 +332,25 @@ async def test_il_contatore_dei_vuoti_riparte_dopo_un_recupero(
     await hass.async_block_till_done()
 
     coordinator = voce.runtime_data
-    assert coordinator._scarichi_vuoti == 0
+    assert coordinator._ultimo_riallineamento is None, "col pieno non si tenta"
 
-    # Un vuoto isolato...
+    # Un vuoto: il tentativo parte e viene marcato nel tempo.
     aioclient_mock.clear_requests()
     registra(aioclient_mock, calendario="calendario_vuoto", allegati="allegati_vuoti")
     freezer.tick(timedelta(hours=UPDATE_INTERVAL_HOURS + 1))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
-    assert coordinator._scarichi_vuoti == 1
+    primo = coordinator._ultimo_riallineamento
+    assert primo is not None
 
-    # ...e poi il calendario torna: il conteggio deve azzerarsi.
+    # Il calendario torna: il marcatore NON si azzera, o un backend che
+    # sfarfalla pagherebbe un riallineamento a ogni vuoto isolato.
     aioclient_mock.clear_requests()
     registra(aioclient_mock)
     freezer.tick(timedelta(hours=UPDATE_INTERVAL_HOURS + 1))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
-    assert coordinator._scarichi_vuoti == 0, (
-        "il contatore deve contare i vuoti CONSECUTIVI"
-    )
+    assert coordinator._ultimo_riallineamento == primo
 
 
 async def test_il_log_non_contiene_gli_identificativi(
@@ -386,15 +429,55 @@ async def test_avviso_una_volta_sola_per_indirizzo_muto(
         r
         for r in caplog.records
         if r.levelno == logging.INFO
-        and "non pubblica alcun calendario" in r.getMessage()
+        and "non ha restituito alcun calendario" in r.getMessage()
     ]
     assert len(spiegazioni) == 1, f"detto {len(spiegazioni)} volte invece di una"
 
 
-async def test_il_risveglio_non_gira_a_vuoto(
+async def test_si_chiede_il_calendario_a_partire_da_ieri(
     hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
 ) -> None:
-    """Un confine gia' passato non deve far rientrare il callback all'infinito."""
+    """Il backend filtra dalla data richiesta: partire da oggi cancella ieri sera.
+
+    Dove la finestra scavalca la mezzanotte, uno scarico che cade fra la
+    mezzanotte e la chiusura - con un aggiornamento ogni dodici ore capita
+    spesso - toglieva dai dati proprio la sera che il sensore stava tenendo viva.
+    """
+    freezer.move_to(SERA_DI_RACCOLTA)
+    await hass.config.async_set_time_zone("Europe/Rome")
+    voce.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    richieste = [
+        c for c in aioclient_mock_calls(gestore) if "getCalendarioPap.php" in c[0]
+    ]
+    assert richieste, "nessuna richiesta di calendario"
+    chiesto = richieste[-1][1]["date"]
+    assert chiesto.startswith("2026-09-02"), (
+        f"chiesto da {chiesto}, ma deve partire da ieri"
+    )
+
+
+def aioclient_mock_calls(mock) -> list[tuple[str, dict[str, str]]]:
+    """URL e parametri di ogni chiamata registrata dal mock."""
+    fuori: list[tuple[str, dict[str, str]]] = []
+    for chiamata in mock.mock_calls:
+        url = str(chiamata[1])
+        pezzi = urlparse(url)
+        fuori.append((pezzi.path, {k: v[0] for k, v in parse_qs(pezzi.query).items()}))
+    return fuori
+
+
+async def test_il_risveglio_e_sempre_nel_futuro(
+    hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
+) -> None:
+    """Un confine gia' passato non deve produrre un ritardo negativo.
+
+    Questo test guarda l'ISTANTE passato a async_track_point_in_time, non solo
+    che il risveglio esista: senza, il pavimento non sarebbe esercitato da nulla
+    e toglierlo non romperebbe nessun test.
+    """
     freezer.move_to(SERA_DI_RACCOLTA)
     await hass.config.async_set_time_zone("Europe/Rome")
     voce.add_to_hass(hass)
@@ -403,14 +486,21 @@ async def test_il_risveglio_non_gira_a_vuoto(
 
     coordinator = voce.runtime_data
     adesso = dt_util.now()
+    programmati: list[datetime] = []
 
-    # Si finge un confine nel passato: senza pavimento il ritardo sarebbe
-    # negativo e il callback rientrerebbe subito, riprogrammandosi uguale.
-    with patch.object(
-        modulo, "prossimo_confine", return_value=adesso - timedelta(hours=3)
+    def _spia(hass_, azione, quando):
+        programmati.append(quando)
+        return lambda: None
+
+    with (
+        patch.object(
+            modulo, "prossimo_confine", return_value=adesso - timedelta(hours=3)
+        ),
+        patch.object(modulo, "async_track_point_in_time", _spia),
     ):
         coordinator._programma_risveglio(coordinator.data)
-        await hass.async_block_till_done()
 
-    # Il risveglio esiste ed e' programmato nel futuro, non e' gia' scattato.
-    assert coordinator._disdici_risveglio is not None
+    assert programmati, "nessun risveglio programmato"
+    assert programmati[-1] > adesso, (
+        f"programmato nel passato ({programmati[-1]} <= {adesso}): girerebbe a vuoto"
+    )

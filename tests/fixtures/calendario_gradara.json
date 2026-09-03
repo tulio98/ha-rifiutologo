@@ -1,0 +1,233 @@
+{
+ "notaPap": "",
+ "calendario": [
+  {
+   "idGiorno": "4",
+   "data": "2026-09-03T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 68,
+      "descrizione": "Carta",
+      "pittogramma": {
+       "nomeFile": "img8485",
+       "colore": "CC3300"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "23:00",
+     "orario": "dalle 20:00 alle 23:00",
+     "oraInizioRaccolta": "06:00",
+     "oraFineRaccolta": "06:00",
+     "orarioRaccolta": "dalle 06:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "5",
+   "data": "2026-09-04T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "666600"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "06:00",
+     "orario": "dalle 20:00 alle 06:00",
+     "oraInizioRaccolta": "06:00",
+     "oraFineRaccolta": "06:00",
+     "orarioRaccolta": "dalle 06:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "7",
+   "data": "2026-09-06T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "666600"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "06:00",
+     "orario": "dalle 20:00 alle 06:00",
+     "oraInizioRaccolta": "06:00",
+     "oraFineRaccolta": "06:00",
+     "orarioRaccolta": "dalle 06:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "1",
+   "data": "2026-09-07T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 39,
+      "descrizione": "Vetro",
+      "pittogramma": {
+       "nomeFile": "img6649",
+       "colore": "0033FF"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "23:00",
+     "orario": "dalle 20:00 alle 23:00",
+     "oraInizioRaccolta": "06:00",
+     "oraFineRaccolta": "06:00",
+     "orarioRaccolta": "dalle 06:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "2",
+   "data": "2026-09-08T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 13,
+      "descrizione": "Indifferenziato",
+      "pittogramma": {
+       "nomeFile": "img7653",
+       "colore": "7C7C81"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "23:00",
+     "orario": "dalle 20:00 alle 23:00",
+     "oraInizioRaccolta": "06:00",
+     "oraFineRaccolta": "06:00",
+     "orarioRaccolta": "dalle 06:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    },
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "666600"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "06:00",
+     "orario": "dalle 20:00 alle 06:00",
+     "oraInizioRaccolta": "06:00",
+     "oraFineRaccolta": "06:00",
+     "orarioRaccolta": "dalle 06:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "3",
+   "data": "2026-09-09T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 26,
+      "descrizione": "Plastica",
+      "pittogramma": {
+       "nomeFile": "img6665",
+       "colore": "F9EC60"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "23:00",
+     "orario": "dalle 20:00 alle 23:00",
+     "oraInizioRaccolta": "06:00",
+     "oraFineRaccolta": "06:00",
+     "orarioRaccolta": "dalle 06:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    },
+    {
+     "macroprodotto": {
+      "id": 18,
+      "descrizione": "Lattine",
+      "pittogramma": {
+       "nomeFile": "img6652",
+       "colore": "F9EC60"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "23:00",
+     "orario": "dalle 20:00 alle 23:00",
+     "oraInizioRaccolta": "06:00",
+     "oraFineRaccolta": "06:00",
+     "orarioRaccolta": "dalle 06:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "4",
+   "data": "2026-09-10T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 68,
+      "descrizione": "Carta",
+      "pittogramma": {
+       "nomeFile": "img8485",
+       "colore": "CC3300"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "23:00",
+     "orario": "dalle 20:00 alle 23:00",
+     "oraInizioRaccolta": "06:00",
+     "oraFineRaccolta": "06:00",
+     "orarioRaccolta": "dalle 06:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  },
+  {
+   "idGiorno": "5",
+   "data": "2026-09-11T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "666600"
+      }
+     },
+     "oraInizio": "20:00",
+     "oraFine": "06:00",
+     "orario": "dalle 20:00 alle 06:00",
+     "oraInizioRaccolta": "06:00",
+     "oraFineRaccolta": "06:00",
+     "orarioRaccolta": "dalle 06:00 del giorno successivo",
+     "straordinario": "0",
+     "note": null
+    }
+   ]
+  }
+ ]
+}

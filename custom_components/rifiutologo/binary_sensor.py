@@ -7,10 +7,12 @@ from typing import Any
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .api import GiornoRaccolta
 from .coordinator import RifiutologoConfigEntry, RifiutologoCoordinator
 from .entity import RifiutologoEntity, attributi_giorno
+from .orari import solo_aperti
 
 
 async def async_setup_entry(
@@ -40,13 +42,11 @@ class BinarioEsporreStasera(RifiutologoEntity, BinarySensorEntity):
 
     @property
     def _giorno(self) -> GiornoRaccolta | None:
-        """La raccolta da esporre adesso, se il momento e' arrivato."""
+        """La raccolta da esporre adesso, con le sole frazioni ancora in tempo."""
         giorno = self.coordinator.attuale
-        return (
-            giorno
-            if giorno is not None and giorno.giorno <= self.coordinator.oggi
-            else None
-        )
+        if giorno is None or giorno.giorno > self.coordinator.oggi:
+            return None
+        return solo_aperti(giorno, dt_util.now())
 
     @property
     def is_on(self) -> bool | None:

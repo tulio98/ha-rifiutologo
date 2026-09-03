@@ -30,6 +30,11 @@ from .orari import giorno_in_corso, prossima_raccolta, prossimo_confine
 
 _LOGGER = logging.getLogger(__name__)
 
+INTERVALLO_RIALLINEAMENTO = timedelta(
+    hours=UPDATE_INTERVAL_HOURS * CADENZA_RIALLINEAMENTO
+)
+"""Quanto deve passare fra due tentativi di ritrovare l'indirizzo per nome."""
+
 type RifiutologoConfigEntry = ConfigEntry[RifiutologoCoordinator]
 
 
@@ -62,7 +67,11 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
         # cambiassero, il calendario tornerebbe vuoto senza dire niente: qui si
         # tiene una risoluzione alternativa fatta per nome, valida per la sessione.
         self._id_riallineati: tuple[int, int, int] | None = None
-        self._scarichi_vuoti = 0
+        # Il freno del riallineamento e' sul TEMPO e non sul numero di scarichi
+        # vuoti: contando i vuoti consecutivi, un backend che alterna pieno e
+        # vuoto azzerava il contatore a ogni giro e pagava un riallineamento a
+        # ogni singolo vuoto isolato.
+        self._ultimo_riallineamento: datetime | None = None
         self._gia_avvisato = False
 
         self._disdici_risveglio: CALLBACK_TYPE | None = None
@@ -120,13 +129,12 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
 
     @property
     def prossima(self) -> GiornoRaccolta | None:
-        """La prossima raccolta, da oggi in avanti.
+        """La prossima raccolta di cui occuparsi, mai nel passato.
 
-        Deliberatamente diversa da `attuale`: un sensore che si chiama "prossima
-        raccolta" non puo' rispondere ieri, nemmeno nelle ore in cui la finestra
-        di ieri e' ancora aperta.
+        Deliberatamente diversa da `attuale`, ma non scollegata: usa lo stesso
+        metro della finestra, cosi' le due entita' non possono contraddirsi.
         """
-        return prossima_raccolta(self.data, self.oggi)
+        return prossima_raccolta(self.data, dt_util.now())
 
     # --- risveglio ai confini della giornata -----------------------------------
 
@@ -172,14 +180,22 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
     # --- scarico ---------------------------------------------------------------
 
     async def _scarica(self) -> Calendario:
-        """Un giro secco sul gestore con gli identificativi in uso."""
+        """Un giro secco sul gestore con gli identificativi in uso.
+
+        Si parte da IERI e non da oggi. Il backend filtra dalla data richiesta
+        compresa, e dove la finestra scavalca la mezzanotte la sera di ieri e'
+        ancora quella da esporre: uno scarico che cade fra la mezzanotte e la
+        chiusura - e con un aggiornamento ogni dodici ore capita spesso - la
+        cancellerebbe dai dati proprio mentre serve.
+        """
         comune_id, via_id, civico_id = self._identificativi
         return await self.client.calendario(
             comune_id,
             via_id,
             civico_id,
-            da=self.oggi,
-            giorni=self.giorni_da_mostrare,
+            da=self.oggi - timedelta(days=1),
+            # Un giorno in piu', per non accorciare l'orizzonte in avanti.
+            giorni=self.giorni_da_mostrare + 1,
         )
 
     async def _async_update_data(self) -> Calendario:
@@ -189,13 +205,7 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
         except RifiutologoError as errore:
             raise UpdateFailed(str(errore)) from errore
 
-        if calendario.giorni:
-            # Il contatore conta i vuoti CONSECUTIVI: senza questo azzeramento
-            # un vuoto isolato sfaserebbe la cadenza per tutta la sessione, e la
-            # rete di sicurezza arriverebbe con giorni di ritardo.
-            self._scarichi_vuoti = 0
-            self._gia_avvisato = False
-        else:
+        if not calendario.giorni:
             calendario = await self._forse_riallinea(calendario)
 
         self._programma_risveglio(calendario)
@@ -207,54 +217,58 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
         Un calendario vuoto ha tre cause diverse e indistinguibili dalla
         risposta: l'indirizzo non ha il porta a porta (il caso normale, e non e'
         un guasto), gli identificativi non valgono piu', oppure il backend ha
-        cambiato forma. Si tenta ogni tanto e non una volta sola: se il primo
-        tentativo lo brucia un indirizzo senza porta a porta, il giorno in cui
-        il gestore rinumera davvero la rete di sicurezza deve esserci ancora.
+        cambiato forma. Si tenta a intervalli di tempo: se il primo tentativo lo
+        brucia un indirizzo senza porta a porta, il giorno in cui il gestore
+        rinumera davvero la rete di sicurezza deve esserci ancora.
         """
-        self._scarichi_vuoti += 1
-        if (self._scarichi_vuoti - 1) % CADENZA_RIALLINEAMENTO:
+        adesso = dt_util.utcnow()
+        if (
+            self._ultimo_riallineamento is not None
+            and adesso - self._ultimo_riallineamento < INTERVALLO_RIALLINEAMENTO
+        ):
             self._avvisa_se_muto()
             return vuoto
+        self._ultimo_riallineamento = adesso
 
         precedenti = self._id_riallineati
+        confermata = False
         try:
             if not await self._riallinea():
-                self._avvisa_se_muto()
                 return vuoto
             nuovo = await self._scarica()
+            if not nuovo.giorni:
+                # Gli identificativi nuovi non hanno risolto niente.
+                _LOGGER.debug(
+                    "%s: gli identificativi ricalcolati danno un calendario "
+                    "vuoto lo stesso",
+                    self._etichetta,
+                )
+                return vuoto
+            confermata = True
         except RifiutologoError as errore:
             # La rete di sicurezza e' un di piu'. Se inciampa lei, si tiene il
             # risultato valido che si ha gia' in mano: renderebbe l'integrazione
-            # meno affidabile di quanto sarebbe senza. E si torna alla terna di
-            # prima, che quella nuova non e' mai stata confermata.
+            # meno affidabile di quanto sarebbe senza.
             _LOGGER.debug("%s: riallineamento interrotto: %s", self._etichetta, errore)
-            self._id_riallineati = precedenti
-            self._avvisa_se_muto()
             return vuoto
+        finally:
+            if not confermata:
+                # Vale per QUALUNQUE uscita non riuscita, comprese le eccezioni
+                # fuori dalla gerarchia del client: una terna mai confermata non
+                # deve restare in uso per il resto della sessione.
+                self._id_riallineati = precedenti
+                self._avvisa_se_muto()
 
-        if nuovo.giorni:
-            self._scarichi_vuoti = 0
-            self._gia_avvisato = False
-            # L'avviso si da' QUI, non appena si trova una terna diversa: prima
-            # di questo punto nessuno l'aveva ancora provata.
-            _LOGGER.warning(
-                "%s: il gestore ha cambiato gli identificativi di questo "
-                "indirizzo. Li ho ricalcolati partendo dal nome e il calendario "
-                "e' tornato. Vale per questa sessione: se il problema si ripete, "
-                "riconfigura l'integrazione",
-                self._etichetta,
-            )
-            return nuovo
-
-        # Gli identificativi nuovi non hanno risolto niente: si torna indietro
-        # invece di trascinarli per tutta la sessione.
-        _LOGGER.debug(
-            "%s: gli identificativi ricalcolati danno un calendario vuoto lo stesso",
+        # L'avviso si da' QUI, non appena si trova una terna diversa: prima di
+        # questo punto nessuno l'aveva ancora provata.
+        _LOGGER.warning(
+            "%s: il gestore ha cambiato gli identificativi di questo indirizzo. "
+            "Li ho ricalcolati partendo dal nome e il calendario e' tornato. "
+            "Vale per questa sessione: se il problema si ripete, riconfigura "
+            "l'integrazione",
             self._etichetta,
         )
-        self._id_riallineati = precedenti
-        self._avvisa_se_muto()
-        return vuoto
+        return nuovo
 
     @callback
     def _avvisa_se_muto(self) -> None:
@@ -262,10 +276,15 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
         if self._gia_avvisato:
             return
         self._gia_avvisato = True
+        # Una volta per sessione e basta: non si azzera quando il calendario
+        # torna, altrimenti un backend che alterna pieno e vuoto riempirebbe il
+        # log della stessa riga. Il prezzo e' che una seconda sparizione nella
+        # stessa sessione non viene piu' spiegata.
         _LOGGER.info(
-            "%s: il gestore non pubblica alcun calendario per questo indirizzo. "
-            "Non e' un guasto: succede agli indirizzi serviti da cassonetti "
-            "stradali o da isole ecologiche, che a Padova sono circa uno su tre",
+            "%s: il gestore non ha restituito alcun calendario per questo "
+            "indirizzo. Di solito non e' un guasto: succede agli indirizzi "
+            "serviti da cassonetti stradali o da isole ecologiche, che a Padova "
+            "sono circa uno su tre",
             self._etichetta,
         )
 

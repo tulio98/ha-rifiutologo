@@ -15,6 +15,7 @@ from homeassistant.components.calendar import (
     CalendarEntity,
     CalendarEvent,
 )
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -45,15 +46,19 @@ async def async_setup_entry(
     )
     frazioni_create: set[str] = set()
     chiavi_usate: set[str] = set()
-    scaricata = False
 
     @callback
     def _frazioni_mancanti() -> list[CalendarEntity]:
         """Le entita' per frazione che ancora non esistono."""
         if not per_frazione or coordinator.data is None:
             return []
+        colori = coordinator.data.frazioni
+        chiavi = coordinator.data.chiavi_frazione
         nuove: list[CalendarEntity] = []
-        for frazione, colore in coordinator.data.frazioni.items():
+        # In ordine di NOME e non nell'ordine dell'API: l'assegnazione delle
+        # chiavi non deve dipendere da come il gestore elenca le frazioni, che
+        # cambia da solo mentre la finestra dei giorni scorre.
+        for frazione in sorted(colori):
             if frazione in frazioni_create:
                 continue
             frazioni_create.add(frazione)
@@ -61,8 +66,8 @@ async def async_setup_entry(
                 CalendarioFrazione(
                     coordinator,
                     frazione,
-                    colore,
-                    _chiave_libera(frazione, chiavi_usate),
+                    colori[frazione],
+                    _chiave_libera(chiavi.get(frazione, frazione), chiavi_usate),
                 )
             )
         return nuove
@@ -85,18 +90,16 @@ async def async_setup_entry(
         Gli sfalci a primavera, per esempio: senza questo l'entita' nascerebbe
         solo al riavvio successivo di Home Assistant.
         """
-        if scaricata:
+        # Si guarda lo stato della voce e non un flag registrato con
+        # async_on_unload: quelle callback girano DOPO che le piattaforme sono
+        # state smontate, quindi un flag arriverebbe sempre tardi. Fra lo
+        # smontaggio e la fine dello scaricamento la voce e' UNLOAD_IN_PROGRESS,
+        # ed e' li' che un aggiornamento creerebbe un'entita' orfana.
+        if entry.state is not ConfigEntryState.LOADED:
             return
         if nuove := _frazioni_mancanti():
             async_add_entities(nuove)
 
-    @callback
-    def _segna_scaricata() -> None:
-        """Chiude la porta prima che la voce venga smontata."""
-        nonlocal scaricata
-        scaricata = True
-
-    entry.async_on_unload(_segna_scaricata)
     entry.async_on_unload(coordinator.async_add_listener(_al_dato_nuovo))
 
 
@@ -119,14 +122,15 @@ def _rimuovi_calendari_per_frazione(
 
 
 @callback
-def _chiave_libera(frazione: str, usate: set[str]) -> str:
+def _chiave_libera(radice: str, usate: set[str]) -> str:
     """Una chiave di unique_id che non collide con quelle gia' assegnate.
 
-    `_chiave` non e' iniettiva - due nomi che differiscono solo nella
-    punteggiatura danno lo stesso slug - e una collisione farebbe sparire
-    un'entita' in silenzio, perche' Home Assistant scarta il duplicato.
+    La radice arriva gia' stabile da `Calendario.chiavi_frazione`: e' l'id del
+    macroprodotto, che non dipende dall'ordine. Questo e' l'ultimo paracadute,
+    per il caso in cui il gestore non dichiari l'id e due nomi diversi diano lo
+    stesso slug: senza, Home Assistant scarterebbe il duplicato e un'entita'
+    sparirebbe in silenzio.
     """
-    radice = _chiave(frazione)
     chiave = radice
     contatore = 1
     while chiave in usate:

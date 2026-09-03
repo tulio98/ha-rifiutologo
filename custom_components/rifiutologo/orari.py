@@ -19,14 +19,15 @@ finisce per rispondere il passato:
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import date, datetime, time, timedelta
 
 from homeassistant.util import dt as dt_util
 
-from .api import Calendario, GiornoRaccolta
+from .api import MINUTI_IN_UN_GIORNO, Calendario, GiornoRaccolta
 
 
-def istante(giorno: date, minuti: int) -> datetime:
+def istante(giorno: date, minuti: int, *, fold: int = 0) -> datetime:
     """L'istante locale a `minuti` dalla mezzanotte di `giorno`.
 
     I minuti oltre 1440 finiscono nei giorni successivi: e' cosi' che si
@@ -37,6 +38,12 @@ def istante(giorno: date, minuti: int) -> datetime:
     e' piu' esplicito - non perche' la somma sbagli: su un datetime aware
     l'aritmetica e' gia' di parete, e nei giorni del cambio d'ora i due modi
     danno lo stesso risultato (verificato sul 25 ottobre 2026).
+
+    Nella notte in cui l'ora torna indietro un'ora di parete capita due volte.
+    `fold` sceglie quale delle due: 0 la prima, 1 la seconda. Le chiusure usano
+    la seconda, cosi' nel dubbio la finestra resta aperta piu' a lungo invece di
+    chiudersi in anticipo. Oggi nessun comune censito chiude fra le 02:00 e le
+    03:00, quindi e' una precauzione e non il rimedio a un caso vivo.
     """
     giorni_avanti, resto = divmod(minuti, 24 * 60)
     ore, minuti_residui = divmod(resto, 60)
@@ -44,7 +51,7 @@ def istante(giorno: date, minuti: int) -> datetime:
         giorno + timedelta(days=giorni_avanti),
         time(hour=ore, minute=minuti_residui),
         tzinfo=dt_util.get_default_time_zone(),
-    )
+    ).replace(fold=fold)
 
 
 def apertura(giorno: GiornoRaccolta) -> datetime:
@@ -63,7 +70,41 @@ def chiusura(giorno: GiornoRaccolta) -> datetime:
     E' la fine dell'ultima finestra dichiarata, che puo' cadere il giorno dopo.
     Senza finestre dichiarate e' la mezzanotte.
     """
-    return istante(giorno.giorno, giorno.chiusura_minuti)
+    return istante(giorno.giorno, giorno.chiusura_minuti, fold=1)
+
+
+def solo_aperti(
+    giorno: GiornoRaccolta | None, adesso: datetime
+) -> GiornoRaccolta | None:
+    """La stessa sera, con le sole frazioni ancora esponibili.
+
+    Serve perche' la chiusura del GIORNO e' il massimo fra le frazioni, e in una
+    sera con finestre diverse quella che chiude prima resterebbe elencata come
+    "da esporre adesso" anche dopo essere scaduta: a Gradara l'Indifferenziato
+    chiude alle 23:00 e l'Organico alle 06:00, e fra le due il sensore diceva di
+    esporre entrambi contraddicendo il proprio attributo orari_esposizione.
+
+    Ritorna None se non e' rimasto niente da esporre.
+    """
+    if giorno is None:
+        return None
+    aperti = tuple(
+        c
+        for c in giorno.conferimenti
+        if istante(
+            giorno.giorno,
+            c.fine_minuti_effettiva
+            if c.fine_minuti_effettiva is not None
+            else MINUTI_IN_UN_GIORNO,
+            fold=1,
+        )
+        > adesso
+    )
+    if not aperti:
+        return None
+    if len(aperti) == len(giorno.conferimenti):
+        return giorno
+    return dataclasses.replace(giorno, conferimenti=aperti)
 
 
 def giorno_in_corso(
@@ -87,19 +128,26 @@ def giorno_in_corso(
 
 
 def prossima_raccolta(
-    calendario: Calendario | None, oggi: date
+    calendario: Calendario | None, adesso: datetime
 ) -> GiornoRaccolta | None:
-    """La prima raccolta da oggi compreso in avanti.
+    """La prossima raccolta di cui occuparsi. Non cade mai nel passato.
 
-    Non torna mai una data passata, ed e' proprio per questo che esiste separata
-    da `giorno_in_corso`: un sensore che si chiama "prossima raccolta" non puo'
-    rispondere ieri, nemmeno nelle sei ore in cui la finestra di ieri e' ancora
-    aperta.
+    Servono ENTRAMBE le condizioni, e ciascuna chiude un difetto diverso:
+
+    - la finestra non ancora chiusa. Senza, nei comuni che chiudono prima di
+      mezzanotte - Modena espone dalle 00:00 alle 07:00, Casalecchio dalle 18:00
+      alle 20:00 - per gran parte della giornata questa direbbe "oggi, fra zero
+      giorni" mentre il sensore dell'esposizione e' gia' spento da ore: due
+      entita' dello stesso dispositivo che si contraddicono.
+    - la data non passata. Senza, dove la finestra scavalca la mezzanotte
+      risponderebbe ieri, e un sensore che si chiama "prossima raccolta" con
+      device_class DATE non puo' pubblicare una data passata.
     """
     if calendario is None:
         return None
+    oggi = adesso.date()
     for giorno in calendario.giorni:
-        if giorno.giorno >= oggi:
+        if giorno.giorno >= oggi and chiusura(giorno) > adesso:
             return giorno
     return None
 

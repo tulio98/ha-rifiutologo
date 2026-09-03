@@ -1,0 +1,341 @@
+{
+ "notaPap": "",
+ "calendario": [
+  {
+   "idGiorno": "4",
+   "data": "2026-09-03T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 18,
+      "descrizione": "Lattine",
+      "pittogramma": {
+       "nomeFile": "img6652",
+       "colore": "9FA1A4"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione interna"
+    },
+    {
+     "macroprodotto": {
+      "id": 26,
+      "descrizione": "Plastica",
+      "pittogramma": {
+       "nomeFile": "img6665",
+       "colore": "FDB913"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione interna"
+    }
+   ]
+  },
+  {
+   "idGiorno": "5",
+   "data": "2026-09-04T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "701100"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione la sera"
+    },
+    {
+     "macroprodotto": {
+      "id": 41,
+      "descrizione": "Carta e cartone",
+      "pittogramma": {
+       "nomeFile": "img6671",
+       "colore": "0093D0"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione interna"
+    }
+   ]
+  },
+  {
+   "idGiorno": "6",
+   "data": "2026-09-05T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 71,
+      "descrizione": "Pannolini/Pannoloni",
+      "pittogramma": {
+       "nomeFile": "img7653",
+       "colore": "930FA5"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione interna"
+    }
+   ]
+  },
+  {
+   "idGiorno": "1",
+   "data": "2026-09-07T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 18,
+      "descrizione": "Lattine",
+      "pittogramma": {
+       "nomeFile": "img6652",
+       "colore": "9FA1A4"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione interna"
+    },
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "701100"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione la sera"
+    },
+    {
+     "macroprodotto": {
+      "id": 26,
+      "descrizione": "Plastica",
+      "pittogramma": {
+       "nomeFile": "img6665",
+       "colore": "FDB913"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione interna"
+    }
+   ]
+  },
+  {
+   "idGiorno": "2",
+   "data": "2026-09-08T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 41,
+      "descrizione": "Carta e cartone",
+      "pittogramma": {
+       "nomeFile": "img6671",
+       "colore": "0093D0"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione interna"
+    }
+   ]
+  },
+  {
+   "idGiorno": "3",
+   "data": "2026-09-09T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 13,
+      "descrizione": "Indifferenziato",
+      "pittogramma": {
+       "nomeFile": "img7653",
+       "colore": "7C7C81"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione interna"
+    },
+    {
+     "macroprodotto": {
+      "id": 39,
+      "descrizione": "Vetro",
+      "pittogramma": {
+       "nomeFile": "img6649",
+       "colore": "00A88F"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione interna"
+    },
+    {
+     "macroprodotto": {
+      "id": 71,
+      "descrizione": "Pannolini/Pannoloni",
+      "pittogramma": {
+       "nomeFile": "img7653",
+       "colore": "930FA5"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione interna"
+    }
+   ]
+  },
+  {
+   "idGiorno": "4",
+   "data": "2026-09-10T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 18,
+      "descrizione": "Lattine",
+      "pittogramma": {
+       "nomeFile": "img6652",
+       "colore": "9FA1A4"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione interna"
+    },
+    {
+     "macroprodotto": {
+      "id": 26,
+      "descrizione": "Plastica",
+      "pittogramma": {
+       "nomeFile": "img6665",
+       "colore": "FDB913"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione interna"
+    }
+   ]
+  },
+  {
+   "idGiorno": "5",
+   "data": "2026-09-11T00:00:00+00:00",
+   "conferimenti": [
+    {
+     "macroprodotto": {
+      "id": 24,
+      "descrizione": "Organico",
+      "pittogramma": {
+       "nomeFile": "img6658",
+       "colore": "701100"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione la sera"
+    },
+    {
+     "macroprodotto": {
+      "id": 41,
+      "descrizione": "Carta e cartone",
+      "pittogramma": {
+       "nomeFile": "img6671",
+       "colore": "0093D0"
+      }
+     },
+     "oraInizio": "00:00",
+     "oraFine": "07:00",
+     "orario": "dalle 00:00 alle 07:00",
+     "oraInizioRaccolta": "07:00",
+     "oraFineRaccolta": "20:00",
+     "orarioRaccolta": "dalle 07:00 alle 20:00",
+     "straordinario": "0",
+     "note": "esposizione interna"
+    }
+   ]
+  }
+ ]
+}

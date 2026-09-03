@@ -121,6 +121,26 @@ class Conferimento:
     note: str | None
 
     @property
+    def apertura_dichiarata(self) -> int | None:
+        """L'ora in cui si puo' COMINCIARE a esporre, se il gestore la dichiara.
+
+        Con una finestra vera e' il suo inizio. Quando oraInizio e oraFine
+        coincidono il numero da solo non basta a dire che cosa significhi, e a
+        dirlo e' il testo del gestore: "dalle 20:00" e' un'apertura, "entro le
+        04:00" e' un termine. Censiti sul backend il 3 settembre 2026: 1382
+        conferimenti della prima forma, 5836 della seconda.
+
+        Se il testo non dice ne' l'una ne' l'altra cosa si ammette di non
+        sapere, invece di indovinare.
+        """
+        if self.inizio_minuti is None:
+            return None
+        if self.fine_minuti_effettiva is not None:
+            return self.inizio_minuti
+        testo = (self.orario or "").strip().casefold()
+        return self.inizio_minuti if testo.startswith("dalle") else None
+
+    @property
     def chiave(self) -> str:
         """Identificatore stabile della frazione, per costruire gli UID."""
         if self.macroprodotto_id is not None:
@@ -180,15 +200,16 @@ class GiornoRaccolta:
         gestore elenca i conferimenti non e' garantito, e in una sera con piu'
         frazioni la finestra utile e' quella che si apre prima.
 
-        Si contano solo i conferimenti che dichiarano una finestra vera. Dove
-        inizio e fine coincidono quell'ora e' un TERMINE ("entro le 04:00"), non
-        un'apertura: spacciarla per l'inizio dell'esposizione direbbe a chi legge
-        di cominciare proprio quando invece e' gia' tardi.
+        Si contano solo le aperture DICHIARATE: dove inizio e fine coincidono e
+        il gestore scrive "entro le 04:00" quell'ora e' un termine, e spacciarla
+        per l'inizio direbbe a chi legge di cominciare quando invece e' tardi.
+        Dove pero' scrive "dalle 20:00" e' un'apertura a tutti gli effetti, e va
+        contata.
         """
         inizi = [
-            c.inizio_minuti
+            c.apertura_dichiarata
             for c in self.conferimenti
-            if c.inizio_minuti is not None and c.fine_minuti_effettiva is not None
+            if c.apertura_dichiarata is not None
         ]
         return min(inizi) if inizi else None
 
@@ -203,13 +224,17 @@ class GiornoRaccolta:
         finestra) piu' "dalle 20:00 alle 22:00" chiuderebbe alle 22:00, cioe'
         una frazione in piu' ACCORCEREBBE la sera invece di allungarla.
         """
-        return max(
-            (
-                c.fine_minuti_effettiva
-                if c.fine_minuti_effettiva is not None
-                else MINUTI_IN_UN_GIORNO
+        return (
+            max(
+                (
+                    c.fine_minuti_effettiva
+                    if c.fine_minuti_effettiva is not None
+                    else MINUTI_IN_UN_GIORNO
+                )
+                for c in self.conferimenti
             )
-            for c in self.conferimenti
+            if self.conferimenti
+            else MINUTI_IN_UN_GIORNO
         )
 
     @property
@@ -228,8 +253,16 @@ class GiornoRaccolta:
 
         Anche questa non si puo' schiacciare: su un giorno con piu' frazioni
         capita spesso che la nota appartenga a una sola.
+
+        La chiave e' il nome della frazione: nella rara sera in cui la stessa
+        frazione compare due volte vince la PRIMA nota, come faceva l'attributo
+        scalare prima che questa mappa esistesse.
         """
-        return {c.frazione: c.note for c in self.conferimenti if c.note is not None}
+        note: dict[str, str] = {}
+        for c in self.conferimenti:
+            if c.note is not None:
+                note.setdefault(c.frazione, c.note)
+        return note
 
     @property
     def orari_raccolta_per_frazione(self) -> dict[str, str]:
@@ -276,6 +309,21 @@ class Calendario:
                 if trovate.get(conferimento.frazione) is None:
                     trovate[conferimento.frazione] = conferimento.colore
         return trovate
+
+    @property
+    def chiavi_frazione(self) -> dict[str, str]:
+        """Chiave stabile per ogni frazione, con cui costruire gli unique_id.
+
+        E' l'id del macroprodotto quando il gestore lo dichiara: non dipende
+        dall'ordine in cui le frazioni compaiono nel calendario, che cambia da
+        solo mentre la finestra dei giorni scorre, e sopravvive a un cambio di
+        etichetta. Lo slug del nome resta come ripiego.
+        """
+        chiavi: dict[str, str] = {}
+        for giorno in self.giorni:
+            for conferimento in giorno.conferimenti:
+                chiavi.setdefault(conferimento.frazione, conferimento.chiave)
+        return chiavi
 
     def del_giorno(self, giorno: date) -> GiornoRaccolta | None:
         """La raccolta di un giorno preciso, se c'e'."""
@@ -366,6 +414,13 @@ class RifiutologoClient:
                 # Il backend dichiara text/html anche quando risponde JSON, quindi
                 # si legge il testo e si decodifica a mano invece di usare .json().
                 testo = await risposta.text()
+        except UnicodeDecodeError as err:
+            # Un corpo mal codificato o troncato: e' un guasto della risposta,
+            # non un errore di programmazione, e deve entrare nella gerarchia
+            # degli errori del client come tutti gli altri.
+            raise RifiutologoConnectionError(
+                f"{endpoint} ha risposto un corpo non decodificabile: {err}"
+            ) from err
         except TimeoutError as err:
             raise RifiutologoConnectionError(
                 f"Il backend non ha risposto entro {REQUEST_TIMEOUT} s ({endpoint})"
