@@ -141,9 +141,14 @@ class Conferimento:
         regolare), Bologna 20:00->06:00 (scavalca), Faenza 04:00->04:00 (scadenza).
         """
         inizio, fine = self.inizio_minuti, self.fine_minuti
-        if inizio is None or fine is None or fine == inizio:
+        if inizio is None or fine is None:
             return None
-        return fine + MINUTI_IN_UN_GIORNO if fine < inizio else fine
+        if fine < inizio:
+            fine += MINUTI_IN_UN_GIORNO
+        # Il confronto va fatto DOPO aver normalizzato: "24:00" -> "00:00" da'
+        # 1440 e 0, che normalizzati coincidono. Senza questo si costruirebbe un
+        # evento di calendario di durata zero.
+        return fine if fine > inizio else None
 
     @property
     def inizio_minuti(self) -> int | None:
@@ -174,9 +179,16 @@ class GiornoRaccolta:
         Si prende il minimo e non il primo della lista: l'ordine con cui il
         gestore elenca i conferimenti non e' garantito, e in una sera con piu'
         frazioni la finestra utile e' quella che si apre prima.
+
+        Si contano solo i conferimenti che dichiarano una finestra vera. Dove
+        inizio e fine coincidono quell'ora e' un TERMINE ("entro le 04:00"), non
+        un'apertura: spacciarla per l'inizio dell'esposizione direbbe a chi legge
+        di cominciare proprio quando invece e' gia' tardi.
         """
         inizi = [
-            c.inizio_minuti for c in self.conferimenti if c.inizio_minuti is not None
+            c.inizio_minuti
+            for c in self.conferimenti
+            if c.inizio_minuti is not None and c.fine_minuti_effettiva is not None
         ]
         return min(inizi) if inizi else None
 
@@ -184,16 +196,21 @@ class GiornoRaccolta:
     def chiusura_minuti(self) -> int:
         """Minuti dalla mezzanotte in cui l'ultima finestra della sera si chiude.
 
-        Puo' superare i 1440 quando la finestra scavalca la mezzanotte. Se
-        nessun conferimento dichiara una finestra il confine e' la mezzanotte:
-        e' la scelta prudente, non un orario inventato.
+        Puo' superare i 1440 quando la finestra scavalca la mezzanotte.
+
+        I conferimenti che non dichiarano una finestra contano come mezzanotte,
+        non come zero: altrimenti una sera con "entro le 04:00" (nessuna
+        finestra) piu' "dalle 20:00 alle 22:00" chiuderebbe alle 22:00, cioe'
+        una frazione in piu' ACCORCEREBBE la sera invece di allungarla.
         """
-        fini = [
-            c.fine_minuti_effettiva
+        return max(
+            (
+                c.fine_minuti_effettiva
+                if c.fine_minuti_effettiva is not None
+                else MINUTI_IN_UN_GIORNO
+            )
             for c in self.conferimenti
-            if c.fine_minuti_effettiva is not None
-        ]
-        return max(fini) if fini else MINUTI_IN_UN_GIORNO
+        )
 
     @property
     def orari_per_frazione(self) -> dict[str, str]:
@@ -204,6 +221,15 @@ class GiornoRaccolta:
         una semplificazione che ogni tanto mente.
         """
         return {c.frazione: c.orario for c in self.conferimenti if c.orario is not None}
+
+    @property
+    def note_per_frazione(self) -> dict[str, str]:
+        """Nota del gestore, frazione per frazione.
+
+        Anche questa non si puo' schiacciare: su un giorno con piu' frazioni
+        capita spesso che la nota appartenga a una sola.
+        """
+        return {c.frazione: c.note for c in self.conferimenti if c.note is not None}
 
     @property
     def orari_raccolta_per_frazione(self) -> dict[str, str]:

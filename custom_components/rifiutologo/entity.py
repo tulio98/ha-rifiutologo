@@ -58,10 +58,12 @@ def attributi_giorno(giorno: GiornoRaccolta | None, oggi: date) -> dict[str, Any
             "orari_raccolta": {},
             "straordinario": False,
             "note": None,
+            "note_per_frazione": {},
         }
 
     orari = giorno.orari_per_frazione
     orari_raccolta = giorno.orari_raccolta_per_frazione
+    note = giorno.note_per_frazione
 
     return {
         "frazioni": giorno.frazioni,
@@ -82,5 +84,9 @@ def attributi_giorno(giorno: GiornoRaccolta | None, oggi: date) -> dict[str, Any
         "orario_raccolta": _concorde(orari_raccolta),
         "orari_raccolta": orari_raccolta,
         "straordinario": any(c.straordinario for c in giorno.conferimenti),
-        "note": next((c.note for c in giorno.conferimenti if c.note), None),
+        # Anche la nota va per frazione: su una sera con piu' frazioni capita
+        # spesso che appartenga a una sola, e prendere la prima non nulla la
+        # faceva valere per tutte.
+        "note": _concorde(note),
+        "note_per_frazione": note,
     }

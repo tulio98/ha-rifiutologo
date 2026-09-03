@@ -26,7 +26,7 @@ from .const import (
     DOMAIN,
     UPDATE_INTERVAL_HOURS,
 )
-from .orari import giorno_in_corso, prossimo_confine
+from .orari import giorno_in_corso, prossima_raccolta, prossimo_confine
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -63,6 +63,7 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
         # tiene una risoluzione alternativa fatta per nome, valida per la sessione.
         self._id_riallineati: tuple[int, int, int] | None = None
         self._scarichi_vuoti = 0
+        self._gia_avvisato = False
 
         self._disdici_risveglio: CALLBACK_TYPE | None = None
 
@@ -110,12 +111,22 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
 
     @property
     def attuale(self) -> GiornoRaccolta | None:
-        """La raccolta di cui ci si deve ancora occupare.
+        """Che cosa si puo' ancora esporre adesso.
 
-        E' quella di stasera finche' c'e' tempo per esporre, e subito dopo la
-        successiva. Tutti i sensori si appoggiano a questa sola nozione.
+        Dove la finestra scavalca la mezzanotte puo' essere la sera di IERI, ed
+        e' giusto: alle due di notte a Bologna il sacco va ancora messo fuori.
         """
         return giorno_in_corso(self.data, dt_util.now())
+
+    @property
+    def prossima(self) -> GiornoRaccolta | None:
+        """La prossima raccolta, da oggi in avanti.
+
+        Deliberatamente diversa da `attuale`: un sensore che si chiama "prossima
+        raccolta" non puo' rispondere ieri, nemmeno nelle ore in cui la finestra
+        di ieri e' ancora aperta.
+        """
+        return prossima_raccolta(self.data, self.oggi)
 
     # --- risveglio ai confini della giornata -----------------------------------
 
@@ -134,7 +145,14 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
     def _programma_risveglio(self, calendario: Calendario | None) -> None:
         """Programma il ricalcolo al prossimo confine di giornata."""
         self._annulla_risveglio()
-        quando = prossimo_confine(calendario, dt_util.now())
+        adesso = dt_util.now()
+        # Un confine gia' passato - orologio riportato indietro, o un dato
+        # vecchio - darebbe un ritardo negativo: il callback rientrerebbe subito
+        # e si riprogrammerebbe sullo stesso istante, girando a vuoto senza
+        # freno. Il pavimento costa una riga.
+        quando = max(
+            prossimo_confine(calendario, adesso), adesso + timedelta(seconds=1)
+        )
         self._disdici_risveglio = async_track_point_in_time(
             self.hass, self._al_confine, quando
         )
@@ -168,10 +186,17 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
         """Scarica il calendario dell'indirizzo configurato."""
         try:
             calendario = await self._scarica()
-            if not calendario.giorni:
-                calendario = await self._forse_riallinea(calendario)
         except RifiutologoError as errore:
             raise UpdateFailed(str(errore)) from errore
+
+        if calendario.giorni:
+            # Il contatore conta i vuoti CONSECUTIVI: senza questo azzeramento
+            # un vuoto isolato sfaserebbe la cadenza per tutta la sessione, e la
+            # rete di sicurezza arriverebbe con giorni di ritardo.
+            self._scarichi_vuoti = 0
+            self._gia_avvisato = False
+        else:
+            calendario = await self._forse_riallinea(calendario)
 
         self._programma_risveglio(calendario)
         return calendario
@@ -188,15 +213,37 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
         """
         self._scarichi_vuoti += 1
         if (self._scarichi_vuoti - 1) % CADENZA_RIALLINEAMENTO:
+            self._avvisa_se_muto()
             return vuoto
 
         precedenti = self._id_riallineati
-        if not await self._riallinea():
+        try:
+            if not await self._riallinea():
+                self._avvisa_se_muto()
+                return vuoto
+            nuovo = await self._scarica()
+        except RifiutologoError as errore:
+            # La rete di sicurezza e' un di piu'. Se inciampa lei, si tiene il
+            # risultato valido che si ha gia' in mano: renderebbe l'integrazione
+            # meno affidabile di quanto sarebbe senza. E si torna alla terna di
+            # prima, che quella nuova non e' mai stata confermata.
+            _LOGGER.debug("%s: riallineamento interrotto: %s", self._etichetta, errore)
+            self._id_riallineati = precedenti
+            self._avvisa_se_muto()
             return vuoto
 
-        nuovo = await self._scarica()
         if nuovo.giorni:
             self._scarichi_vuoti = 0
+            self._gia_avvisato = False
+            # L'avviso si da' QUI, non appena si trova una terna diversa: prima
+            # di questo punto nessuno l'aveva ancora provata.
+            _LOGGER.warning(
+                "%s: il gestore ha cambiato gli identificativi di questo "
+                "indirizzo. Li ho ricalcolati partendo dal nome e il calendario "
+                "e' tornato. Vale per questa sessione: se il problema si ripete, "
+                "riconfigura l'integrazione",
+                self._etichetta,
+            )
             return nuovo
 
         # Gli identificativi nuovi non hanno risolto niente: si torna indietro
@@ -206,7 +253,21 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
             self._etichetta,
         )
         self._id_riallineati = precedenti
+        self._avvisa_se_muto()
         return vuoto
+
+    @callback
+    def _avvisa_se_muto(self) -> None:
+        """Spiega una volta sola perche' le entita' non hanno niente da dire."""
+        if self._gia_avvisato:
+            return
+        self._gia_avvisato = True
+        _LOGGER.info(
+            "%s: il gestore non pubblica alcun calendario per questo indirizzo. "
+            "Non e' un guasto: succede agli indirizzi serviti da cassonetti "
+            "stradali o da isole ecologiche, che a Padova sono circa uno su tre",
+            self._etichetta,
+        )
 
     async def _riallinea(self) -> bool:
         """Ricalcola gli id partendo dai nomi salvati.
@@ -245,13 +306,20 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
         if nuovi == attuali:
             return False
 
-        _LOGGER.warning(
-            "%s: il gestore ha cambiato gli identificativi dell'indirizzo, "
-            "%s diventa %s. Uso i nuovi per questa sessione; se il problema si "
-            "ripete, riconfigura l'integrazione",
+        # Non si stampano le terne: via_id e civico_id sono due dei quattro
+        # campi che la diagnostica oscura, e questa riga finisce nei log che le
+        # segnalazioni allegano.
+        cambiati = [
+            nome
+            for nome, prima, dopo in zip(
+                ("comune", "via", "civico"), attuali, nuovi, strict=True
+            )
+            if prima != dopo
+        ]
+        _LOGGER.debug(
+            "%s: identificativi ricalcolati per nome, cambia %s",
             self._etichetta,
-            attuali,
-            nuovi,
+            ", ".join(cambiati),
         )
         self._id_riallineati = nuovi
         return True

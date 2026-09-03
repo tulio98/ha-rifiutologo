@@ -47,18 +47,19 @@ class _SensoreBase(RifiutologoEntity, SensorEntity):
 
     @property
     def _prossimo_giorno(self) -> GiornoRaccolta | None:
-        """La raccolta di cui ci si deve ancora occupare."""
-        return self.coordinator.attuale
+        """La prossima raccolta, da oggi in avanti. Non guarda mai indietro."""
+        return self.coordinator.prossima
 
     @property
     def _giorno_di_oggi(self) -> GiornoRaccolta | None:
         """La raccolta da esporre adesso, se il momento e' arrivato.
 
-        Non basta confrontare la data con oggi: dove la finestra scavalca la
+        Qui si usa `attuale` e non `prossima`: dove la finestra scavalca la
         mezzanotte, alle due di notte si e' ancora in tempo per esporre la
-        raccolta di ieri sera, e quella e' la risposta giusta.
+        raccolta di ieri sera, e quella e' la risposta giusta alla domanda
+        "che cosa metto fuori adesso".
         """
-        giorno = self._prossimo_giorno
+        giorno = self.coordinator.attuale
         return giorno if giorno is not None and giorno.giorno <= self._oggi else None
 
 
@@ -116,9 +117,10 @@ class SensoreProssimaRaccolta(_SensoreBase):
 
 
 class SensoreProssimaEsposizione(_SensoreBase):
-    """L'istante in cui si apre la prossima finestra di esposizione.
+    """L'istante in cui si apre la finestra di esposizione della prossima raccolta.
 
-    Puo' essere nel passato: vuol dire che la finestra e' aperta adesso.
+    Nella sera stessa e' gia' passato di qualche ora, e vuol dire che la
+    finestra e' aperta adesso; non torna mai al giorno prima.
     """
 
     _attr_translation_key = "prossima_esposizione"
@@ -133,8 +135,10 @@ class SensoreProssimaEsposizione(_SensoreBase):
         """Inizio della finestra dichiarata dal gestore.
 
         Si prende il piu' presto fra gli inizi della sera, non il primo della
-        lista. Se il gestore non dichiara un orario si ripiega sulla mezzanotte
-        del giorno di raccolta, che e' il modo onesto di dire "quel giorno".
+        lista, e si contano solo i conferimenti che dichiarano una finestra
+        vera: dove inizio e fine coincidono quell'ora e' un TERMINE ("entro le
+        04:00"), non un'apertura. Senza nessuna finestra si ripiega sulla
+        mezzanotte, che e' il modo onesto di dire "quel giorno".
         """
         giorno = self._prossimo_giorno
         return apertura(giorno) if giorno is not None else None

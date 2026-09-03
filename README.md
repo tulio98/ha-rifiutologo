@@ -38,8 +38,8 @@ Per ogni indirizzo configurato nasce un dispositivo con queste entità:
 | **Raccolta** (`calendar`) | Calendario di tutte le frazioni | Il pannello Calendario, la card, e i trigger `calendar` |
 | **Raccolta stasera** (`binary_sensor`) | Acceso finché c'è tempo per esporre | Il mattone delle automazioni |
 | **Da esporre stasera** (`sensor`) | `Organico, Carta` oppure `nessuna` | Il testo della notifica |
-| **Prossima raccolta** (`sensor`) | Data della prossima esposizione | Card e template |
-| **Prossima esposizione** (`sensor`) | Istante di apertura della finestra | `device_class: timestamp`, si legge come «fra 3 ore» |
+| **Prossima raccolta** (`sensor`) | Data della prossima raccolta, da oggi in avanti | Card e template |
+| **Prossima esposizione** (`sensor`) | Istante in cui si apre la sua finestra | `device_class: timestamp`, si legge come «fra 3 ore» |
 | **Giorni alla prossima** (`sensor`) | `0` vuol dire stasera | Soglie e colori |
 | **Zona di raccolta** (`sensor`) | `Calendario Padova Q6 2026` | Controllare di aver preso il calendario giusto (disattivata di serie) |
 
@@ -60,7 +60,8 @@ Le entità che descrivono **una sera di raccolta** — *Raccolta stasera*, *Da e
 | `orario_esposizione` | la frase del gestore, **solo se vale per tutte le frazioni della sera** |
 | `orari_esposizione` | mappa frazione → orario: dice sempre la verità |
 | `orario_raccolta` / `orari_raccolta` | idem, per il passaggio del mezzo |
-| `straordinario`, `note` | quello che il gestore segnala di eccezionale |
+| `note` / `note_per_frazione` | la nota del gestore, con la stessa regola: lo scalare solo se vale per tutte |
+| `straordinario` | se il gestore segnala una raccolta eccezionale |
 
 *Giorni alla prossima* espone solo il numero; *Zona di raccolta* espone `pdf`, `allegati` e `nota`.
 
@@ -99,6 +100,14 @@ sbagliato. Quando il gestore non dichiara una durata, l'integrazione non se la f
 
 Conseguenza pratica: **il sensore «Raccolta stasera» si spegne alla chiusura della finestra,
 non a mezzanotte.** A Padova coincidono; a Bologna no.
+
+E da qui nasce una distinzione che vale la pena tenere a mente, perché le due entità
+rispondono a due domande diverse:
+
+- **«Raccolta stasera»** e **«Da esporre stasera»** dicono *che cosa si può ancora mettere
+  fuori adesso*. A Bologna, alle due di notte, parlano ancora della sera prima — ed è giusto.
+- **«Prossima raccolta»**, **«Prossima esposizione»** e **«Giorni alla prossima»** guardano
+  solo in avanti, da oggi. Non mostrano mai una data passata.
 
 ## Chi è coperto
 
@@ -301,7 +310,12 @@ forma da allegare a una segnalazione.
   gestore spegne un endpoint non c'è integrazione che tenga.
 - **Gli identificativi non sono garantiti stabili.** Se il gestore rinumerasse il proprio
   database, l'integrazione se ne accorge (il calendario torna vuoto), riprova a risolvere
-  l'indirizzo **per nome** e lo scrive nel log. Ci riprova a cadenza, non una volta sola.
+  l'indirizzo **per nome**, e scrive un avviso nel log *solo quando il rimedio ha davvero
+  funzionato*. Ci riprova a cadenza, non una volta sola.
+- **I log contengono il tuo indirizzo, ma non per colpa dell'integrazione.** Le sue righe
+  citano solo il comune; sono gli `entity_id` — che Home Assistant costruisce dal nome del
+  dispositivo, cioè dall'indirizzo — a comparire nei log di serie. La **diagnostica** invece
+  oscura via e civico davvero. Se alleghi dei log a una segnalazione, dagli un'occhiata.
 - **Gli indirizzi senza porta a porta non sono un guasto.** Sono la normalità in buona parte
   dei centri storici. La configurazione te lo dice subito.
 - **Le festività** non sono un caso a parte: il gestore semplicemente non pubblica quei giorni.
@@ -324,8 +338,9 @@ Se la tua città è servita dal Gruppo Hera e qualcosa non torna — un'etichett
 non ha l'icona giusta, una finestra oraria diversa da quella padovana — apri una issue e
 allega l'uscita di `scripts/prova_api.py ... --anonimo`, oppure la **diagnostica**
 (Impostazioni → Dispositivi e servizi → Il Rifiutologo → i tre puntini → *Scarica diagnostica*).
-Via e civico vengono oscurati automaticamente: il comune no, perché senza quello la
-segnalazione non serve a niente.
+Nella diagnostica via e civico vengono oscurati automaticamente; il comune no, perché senza
+quello la segnalazione non serve a niente. Nei **log**, invece, l'indirizzo compare dentro gli
+`entity_id`: se ne alleghi, guardali prima.
 
 ```bash
 ruff check . && ruff format --check . && pytest

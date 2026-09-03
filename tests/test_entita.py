@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 import json
 from zoneinfo import ZoneInfo
 
@@ -391,3 +391,122 @@ async def test_calendari_per_frazione_spariscono_dal_registro(
     assert not [
         s for s in hass.states.async_all("calendar") if s.state == STATE_UNAVAILABLE
     ]
+
+
+async def test_prossima_raccolta_non_mostra_mai_ieri(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Le due domande hanno due risposte, e nessuna delle due e' una data passata.
+
+    A Bologna il 6 e il 7 settembre sono consecutivi e la finestra del 6 chiude
+    alle 06:00 del 7. Alle due di notte: si espone ancora la roba di ieri, ma la
+    prossima raccolta e' quella di oggi.
+    """
+    registra(
+        aioclient_mock, calendario="calendario_bologna", allegati="allegati_bologna"
+    )
+    freezer.move_to(datetime(2026, 9, 7, 2, 0, tzinfo=ROMA))
+    await _avvia(hass, voce)
+
+    binario = _stato(hass, voce, "binary_sensor", "esporre_stasera")
+    assert binario.state == STATE_ON
+    assert binario.attributes["data"] == "2026-09-06", "la finestra di ieri e' aperta"
+
+    prossima = _stato(hass, voce, "sensor", "prossima_raccolta")
+    assert prossima.state == "2026-09-07", "la prossima raccolta non puo' essere ieri"
+    assert _stato(hass, voce, "sensor", "giorni_alla_prossima").state == "0"
+
+    istante = _stato(hass, voce, "sensor", "prossima_esposizione")
+    quando = datetime.fromisoformat(istante.state).astimezone(ROMA)
+    assert quando.date() == date(2026, 9, 7)
+    assert quando.hour == 20
+
+
+async def test_le_frazioni_assenti_non_vengono_cancellate(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Un calendario temporaneamente vuoto non deve distruggere le entita'.
+
+    E' il caso che il coordinator stesso definisce normale, e prima portava via
+    le sei entita' per frazione insieme al nome scelto a mano dall'utente.
+    """
+    registra(aioclient_mock)
+    freezer.move_to(SERA_DI_RACCOLTA)
+    voce.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        voce, options={CONF_CALENDARI_PER_FRAZIONE: True}
+    )
+    await hass.config.async_set_time_zone("Europe/Rome")
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    registro = er.async_get(hass)
+
+    def calendari() -> set[str]:
+        return {
+            e.unique_id
+            for e in er.async_entries_for_config_entry(registro, voce.entry_id)
+            if e.domain == "calendar"
+        }
+
+    prima = calendari()
+    assert len(prima) == 7
+
+    # L'utente rinomina un'entita': e' la cosa che si perderebbe.
+    carta = registro.async_get_entity_id(
+        "calendar", DOMAIN, f"{voce.entry_id}_calendario_carta"
+    )
+    registro.async_update_entity(carta, name="La carta di casa")
+
+    # Il gestore smette di rispondere col calendario, e Home Assistant riparte.
+    aioclient_mock.clear_requests()
+    registra(aioclient_mock, calendario="calendario_vuoto", allegati="allegati_vuoti")
+    await hass.config_entries.async_reload(voce.entry_id)
+    await hass.async_block_till_done()
+
+    assert calendari() == prima, "nessuna entita' va cancellata"
+    assert registro.async_get(carta).name == "La carta di casa"
+
+
+async def test_frazioni_che_collidono_restano_due_entita(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Due nomi che danno lo stesso slug non devono far sparire un'entita'."""
+    grezzo = carica("calendario")
+    giorno = grezzo["calendario"][0]
+    gemello = json.loads(json.dumps(giorno["conferimenti"][0]))
+    # "Carta e cartone" e "Carta-e-cartone" danno lo stesso slug.
+    giorno["conferimenti"][0]["macroprodotto"]["descrizione"] = "Carta e cartone"
+    gemello["macroprodotto"] = {
+        "id": 99,
+        "descrizione": "Carta-e-cartone",
+        "pittogramma": {"nomeFile": "x", "colore": "0093D0"},
+    }
+    giorno["conferimenti"].append(gemello)
+
+    aioclient_mock.get(f"{BASE_URL}/getComuni.php", json=carica("comuni"))
+    aioclient_mock.get(f"{BASE_URL}/getIndirizzi.php", json=carica("indirizzi"))
+    aioclient_mock.get(f"{BASE_URL}/getNumeriCivici.php", json=carica("civici"))
+    aioclient_mock.get(f"{BASE_URL}/getCalendarioPap.php", json=grezzo)
+    aioclient_mock.get(f"{BASE_URL}/getAllegatiPap.php", json=carica("allegati"))
+
+    freezer.move_to(SERA_DI_RACCOLTA)
+    voce.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        voce, options={CONF_CALENDARI_PER_FRAZIONE: True}
+    )
+    await hass.config.async_set_time_zone("Europe/Rome")
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    registro = er.async_get(hass)
+    chiavi = {
+        e.unique_id
+        for e in er.async_entries_for_config_entry(registro, voce.entry_id)
+        if e.domain == "calendar"
+    }
+    # I due nomi che collidono ottengono chiavi diverse: nessuno dei due sparisce.
+    assert f"{voce.entry_id}_calendario_carta_e_cartone" in chiavi
+    assert f"{voce.entry_id}_calendario_carta_e_cartone_2" in chiavi
+    # E la frazione "Carta" delle altre sere resta la sua.
+    assert f"{voce.entry_id}_calendario_carta" in chiavi

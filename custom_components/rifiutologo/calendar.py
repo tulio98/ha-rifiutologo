@@ -44,6 +44,8 @@ async def async_setup_entry(
         CONF_CALENDARI_PER_FRAZIONE, DEFAULT_CALENDARI_PER_FRAZIONE
     )
     frazioni_create: set[str] = set()
+    chiavi_usate: set[str] = set()
+    scaricata = False
 
     @callback
     def _frazioni_mancanti() -> list[CalendarEntity]:
@@ -55,11 +57,26 @@ async def async_setup_entry(
             if frazione in frazioni_create:
                 continue
             frazioni_create.add(frazione)
-            nuove.append(CalendarioFrazione(coordinator, frazione, colore))
+            nuove.append(
+                CalendarioFrazione(
+                    coordinator,
+                    frazione,
+                    colore,
+                    _chiave_libera(frazione, chiavi_usate),
+                )
+            )
         return nuove
 
+    if not per_frazione:
+        # Si ripulisce SOLO qui, che e' l'unico caso in cui l'utente ha davvero
+        # detto di non volerle. Dedurre l'elenco atteso dallo scarico corrente
+        # cancellerebbe le frazioni stagionali, quelle fuori dall'orizzonte, e
+        # tutto quanto ogni volta che il calendario torna temporaneamente vuoto:
+        # insieme all'entita' se ne andrebbero il nome scelto a mano, l'area e
+        # le automazioni che la citano.
+        _rimuovi_calendari_per_frazione(hass, entry)
+
     async_add_entities([CalendarioRaccolta(coordinator), *_frazioni_mancanti()])
-    _ripulisci_registro(hass, entry, frazioni_create)
 
     @callback
     def _al_dato_nuovo() -> None:
@@ -68,33 +85,55 @@ async def async_setup_entry(
         Gli sfalci a primavera, per esempio: senza questo l'entita' nascerebbe
         solo al riavvio successivo di Home Assistant.
         """
+        if scaricata:
+            return
         if nuove := _frazioni_mancanti():
             async_add_entities(nuove)
 
+    @callback
+    def _segna_scaricata() -> None:
+        """Chiude la porta prima che la voce venga smontata."""
+        nonlocal scaricata
+        scaricata = True
+
+    entry.async_on_unload(_segna_scaricata)
     entry.async_on_unload(coordinator.async_add_listener(_al_dato_nuovo))
 
 
 @callback
-def _ripulisci_registro(
-    hass: HomeAssistant, entry: RifiutologoConfigEntry, frazioni: set[str]
+def _rimuovi_calendari_per_frazione(
+    hass: HomeAssistant, entry: RifiutologoConfigEntry
 ) -> None:
-    """Toglie dal registro i calendari per frazione che non servono piu'.
+    """Toglie dal registro TUTTI i calendari per frazione.
 
-    Senza questo, spegnendo l'opzione le entita' resterebbero per sempre nel
-    registro in stato "unavailable": Home Assistant le ripulisce da sola solo
-    quando si rimuove l'intera voce di configurazione.
+    Si chiama solo quando l'opzione e' spenta. Senza, spegnendola le entita'
+    resterebbero per sempre nel registro in stato "unavailable": Home Assistant
+    le ripulisce da sola soltanto quando si rimuove l'intera voce.
     """
     registro = er.async_get(hass)
     prefisso = f"{entry.entry_id}_calendario_"
-    attesi = {f"{prefisso}{_chiave(frazione)}" for frazione in frazioni}
 
     for voce in er.async_entries_for_config_entry(registro, entry.entry_id):
-        if (
-            voce.domain == DOMINIO_CALENDARIO
-            and voce.unique_id.startswith(prefisso)
-            and voce.unique_id not in attesi
-        ):
+        if voce.domain == DOMINIO_CALENDARIO and voce.unique_id.startswith(prefisso):
             registro.async_remove(voce.entity_id)
+
+
+@callback
+def _chiave_libera(frazione: str, usate: set[str]) -> str:
+    """Una chiave di unique_id che non collide con quelle gia' assegnate.
+
+    `_chiave` non e' iniettiva - due nomi che differiscono solo nella
+    punteggiatura danno lo stesso slug - e una collisione farebbe sparire
+    un'entita' in silenzio, perche' Home Assistant scarta il duplicato.
+    """
+    radice = _chiave(frazione)
+    chiave = radice
+    contatore = 1
+    while chiave in usate:
+        contatore += 1
+        chiave = f"{radice}_{contatore}"
+    usate.add(chiave)
+    return chiave
 
 
 class _CalendarioBase(RifiutologoEntity, CalendarEntity):
@@ -180,10 +219,14 @@ class CalendarioFrazione(_CalendarioBase):
     """Una sola frazione, col colore che le da' il gestore."""
 
     def __init__(
-        self, coordinator: RifiutologoCoordinator, frazione: str, colore: str | None
+        self,
+        coordinator: RifiutologoCoordinator,
+        frazione: str,
+        colore: str | None,
+        chiave: str,
     ) -> None:
         """Costruisce il calendario di una frazione."""
-        super().__init__(coordinator, f"calendario_{_chiave(frazione)}")
+        super().__init__(coordinator, f"calendario_{chiave}")
         self._frazione = frazione
         self._attr_name = frazione
         self._attr_icon = icona_per_frazione(frazione)

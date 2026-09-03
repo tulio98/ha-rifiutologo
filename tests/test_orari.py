@@ -20,6 +20,7 @@ from custom_components.rifiutologo.orari import (
     chiusura,
     giorno_in_corso,
     istante,
+    prossima_raccolta,
     prossimo_confine,
 )
 from homeassistant.core import HomeAssistant
@@ -237,3 +238,128 @@ async def test_apertura_prende_il_piu_presto() -> None:
     )
     assert giorno.apertura_minuti == 19 * 60
     assert apertura(giorno) == datetime(2026, 9, 3, 19, 0, tzinfo=ROMA)
+
+
+async def test_prossima_raccolta_non_guarda_mai_indietro() -> None:
+    """Un sensore che si chiama "prossima" non puo' rispondere ieri.
+
+    A Bologna il 6 e il 7 settembre sono due giorni di raccolta consecutivi, e
+    la finestra del 6 chiude alle 06:00 del 7. Nelle sei ore in cui i due si
+    sovrappongono le due domande hanno due risposte diverse, ed e' il motivo per
+    cui esistono due funzioni.
+    """
+    calendario = _calendario("calendario_bologna")
+    sei = next(g for g in calendario.giorni if g.giorno == date(2026, 9, 6))
+    sette = next(g for g in calendario.giorni if g.giorno == date(2026, 9, 7))
+
+    alle_due = datetime(2026, 9, 7, 2, 0, tzinfo=ROMA)
+    # Cosa posso ancora esporre: la roba di ieri sera, la finestra e' aperta.
+    assert giorno_in_corso(calendario, alle_due) is sei
+    # Qual e' la prossima raccolta: quella di oggi, non quella di ieri.
+    assert prossima_raccolta(calendario, alle_due.date()) is sette
+
+
+async def test_apertura_non_scambia_una_scadenza_per_un_inizio() -> None:
+    """Una scadenza non e' un'apertura: dirla tale manderebbe fuori tempo."""
+    scadenza = api.Conferimento(
+        frazione="Indifferenziato",
+        macroprodotto_id=1,
+        colore=None,
+        ora_inizio="04:00",
+        ora_fine="04:00",
+        orario="entro le 04:00",
+        orario_raccolta=None,
+        straordinario=False,
+        note=None,
+    )
+    finestra = api.Conferimento(
+        frazione="Plastica",
+        macroprodotto_id=2,
+        colore=None,
+        ora_inizio="20:00",
+        ora_fine="22:00",
+        orario="dalle 20:00 alle 22:00",
+        orario_raccolta=None,
+        straordinario=False,
+        note=None,
+    )
+
+    giorno = api.GiornoRaccolta(
+        giorno=date(2026, 9, 8), conferimenti=(scadenza, finestra)
+    )
+    # Le 04:00 della scadenza non devono vincere sul minimo.
+    assert giorno.apertura_minuti == 20 * 60
+    assert apertura(giorno) == datetime(2026, 9, 8, 20, 0, tzinfo=ROMA)
+
+    # Con la sola scadenza non c'e' apertura: si ripiega sulla mezzanotte.
+    solo_scadenza = api.GiornoRaccolta(
+        giorno=date(2026, 9, 8), conferimenti=(scadenza,)
+    )
+    assert solo_scadenza.apertura_minuti is None
+    assert apertura(solo_scadenza) == datetime(2026, 9, 8, 0, 0, tzinfo=ROMA)
+
+
+async def test_una_frazione_in_piu_non_accorcia_la_sera() -> None:
+    """Chi non dichiara una finestra vale fino a mezzanotte, non fino a zero."""
+    scadenza = api.Conferimento(
+        frazione="Organico",
+        macroprodotto_id=1,
+        colore=None,
+        ora_inizio="06:00",
+        ora_fine="06:00",
+        orario="entro le 06:00",
+        orario_raccolta=None,
+        straordinario=False,
+        note=None,
+    )
+    breve = api.Conferimento(
+        frazione="Plastica",
+        macroprodotto_id=2,
+        colore=None,
+        ora_inizio="20:00",
+        ora_fine="22:00",
+        orario="dalle 20:00 alle 22:00",
+        orario_raccolta=None,
+        straordinario=False,
+        note=None,
+    )
+
+    sola = api.GiornoRaccolta(giorno=date(2026, 9, 8), conferimenti=(scadenza,))
+    insieme = api.GiornoRaccolta(
+        giorno=date(2026, 9, 8), conferimenti=(scadenza, breve)
+    )
+    assert sola.chiusura_minuti == 24 * 60
+    assert insieme.chiusura_minuti == 24 * 60, (
+        "aggiungere una frazione non puo' accorciare la sera"
+    )
+
+
+@pytest.mark.parametrize(
+    ("inizio", "fine"),
+    [("24:00", "00:00"), ("00:00", "24:00"), ("20:00", "20:00")],
+)
+def test_nessuna_finestra_di_durata_zero(inizio: str, fine: str) -> None:
+    """La guardia sta sui minuti normalizzati: niente eventi di durata zero."""
+    conferimento = api.Conferimento(
+        frazione="x",
+        macroprodotto_id=1,
+        colore=None,
+        ora_inizio=inizio,
+        ora_fine=fine,
+        orario=None,
+        orario_raccolta=None,
+        straordinario=False,
+        note=None,
+    )
+    effettiva = conferimento.fine_minuti_effettiva
+    if effettiva is not None:
+        assert effettiva > conferimento.inizio_minuti
+
+
+async def test_il_confine_tiene_conto_anche_dell_apertura() -> None:
+    """Le entita' vanno ricalcolate anche quando la finestra si APRE."""
+    calendario = _calendario("calendario")
+    # Alle 18:00 il prossimo confine sono le 20:00, non la mezzanotte.
+    assert prossimo_confine(
+        calendario, datetime(2026, 9, 3, 18, 0, tzinfo=ROMA)
+    ) == datetime(2026, 9, 3, 20, 0, tzinfo=ROMA)

@@ -43,6 +43,8 @@ body:
     attributes:
       label: Log
       description: >-
-        Le righe che contengono `rifiutologo`. Non contengono via e civico,
-        ma dai comunque un'occhiata prima di incollarle.
+        Le righe che contengono `rifiutologo`. Attenzione: gli `entity_id`
+        contengono la tua via e il civico, perché Home Assistant li costruisce
+        dal nome del dispositivo. Sostituiscili prima di incollare, oppure
+        allega solo la diagnostica, che li oscura da sola.
       render: shell
