@@ -34,7 +34,9 @@
     },
     "error": {
       "cannot_connect": "Non riesco a raggiungere il gestore. Riprova fra qualche minuto.",
-      "nessun_pap": "Questo indirizzo non ha la raccolta porta a porta: e' servito da cassonetti stradali e il gestore non pubblica alcun calendario. Controlla il civico, oppure prova un altro indirizzo."
+      "comune_senza_vie": "Il gestore non elenca nessuna via per questo comune. Scegline un altro.",
+      "nessun_pap": "Questo indirizzo non ha la raccolta porta a porta: e' servito da cassonetti stradali e il gestore non pubblica alcun calendario. Controlla il civico, oppure prova un altro indirizzo.",
+      "via_senza_civici": "Il gestore non elenca nessun civico per questa via. Scegline un'altra."
     },
     "abort": {
       "already_configured": "Questo indirizzo e' gia' configurato.",

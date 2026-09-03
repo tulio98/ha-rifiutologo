@@ -1,4 +1,4 @@
-"""Il binary sensor che risponde a una sola domanda: stasera si espone o no."""
+"""Il binary sensor che risponde a una sola domanda: adesso si espone o no."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .api import GiornoRaccolta
 from .coordinator import RifiutologoConfigEntry, RifiutologoCoordinator
 from .entity import RifiutologoEntity, attributi_giorno
 
@@ -22,12 +23,13 @@ async def async_setup_entry(
 
 
 class BinarioEsporreStasera(RifiutologoEntity, BinarySensorEntity):
-    """Acceso nei giorni in cui il gestore prevede un'esposizione.
+    """Acceso finche' c'e' tempo per esporre.
 
     Attenzione al significato: la data che il gestore pubblica e' la sera in cui
-    si mette fuori il sacco, non il mattino in cui passa il camion. Quindi questo
-    sensore e' acceso per tutto il giorno dell'ESPOSIZIONE, e si spegne a
-    mezzanotte, quando il mezzo deve ancora passare.
+    si mette fuori il sacco, non il mattino in cui passa il camion. Il sensore
+    si spegne quando la finestra di esposizione si chiude - a Padova a
+    mezzanotte, a Bologna alle 06:00 del mattino dopo - e non quando cambia la
+    data.
     """
 
     _attr_translation_key = "esporre_stasera"
@@ -37,20 +39,23 @@ class BinarioEsporreStasera(RifiutologoEntity, BinarySensorEntity):
         super().__init__(coordinator, "esporre_stasera")
 
     @property
-    def is_on(self) -> bool | None:
-        """Vero se stasera c'e' qualcosa da esporre."""
-        if (calendario := self.coordinator.data) is None:
-            return None
-        return calendario.del_giorno(self.coordinator.oggi) is not None
+    def _giorno(self) -> GiornoRaccolta | None:
+        """La raccolta da esporre adesso, se il momento e' arrivato."""
+        giorno = self.coordinator.attuale
+        return (
+            giorno
+            if giorno is not None and giorno.giorno <= self.coordinator.oggi
+            else None
+        )
 
     @property
-    def icon(self) -> str:
-        """Bidone pieno o vuoto, a colpo d'occhio."""
-        return "mdi:trash-can" if self.is_on else "mdi:trash-can-outline"
+    def is_on(self) -> bool | None:
+        """Vero se c'e' qualcosa da esporre e la finestra non e' ancora chiusa."""
+        if self.coordinator.data is None:
+            return None
+        return self._giorno is not None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Che cosa va esposto, con orari e colori."""
-        calendario = self.coordinator.data
-        giorno = calendario.del_giorno(self.coordinator.oggi) if calendario else None
-        return attributi_giorno(giorno, self.coordinator.oggi)
+        return attributi_giorno(self._giorno, self.coordinator.oggi)

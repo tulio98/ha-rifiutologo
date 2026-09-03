@@ -14,9 +14,6 @@
       }
     },
     "sensor": {
-      "esposizione_stasera": {
-        "default": "mdi:trash-can-outline"
-      },
       "giorni_alla_prossima": {
         "default": "mdi:calendar-clock"
       },

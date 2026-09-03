@@ -1,13 +1,12 @@
-"""Base comune a tutte le entita' e costruzione degli attributi condivisi."""
+"""Base comune a tutte le entita' e attributi condivisi."""
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date
 from typing import Any
 
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
 from .api import GiornoRaccolta
 from .const import ATTRIBUTION, DOMAIN, MANUFACTURER
@@ -36,21 +35,13 @@ class RifiutologoEntity(CoordinatorEntity[RifiutologoCoordinator]):
         )
 
 
-def istante(giorno: date, minuti: int) -> datetime:
-    """Costruisce l'istante locale a `minuti` dalla mezzanotte di `giorno`.
+def _concorde(valori: dict[str, str]) -> str | None:
+    """Il valore comune a tutte le frazioni, oppure None se non concordano.
 
-    Si passa per l'ora di parete e non per una somma di timedelta perche' nei due
-    giorni del cambio d'ora una somma sposterebbe l'orario di un'ora. E si
-    gestisce il caso "24:00", che il gestore usa e che non e' un orario valido:
-    sono 1440 minuti, cioe' la mezzanotte del giorno dopo.
+    Meglio nessun orario che un orario che vale solo per una frazione su tre.
     """
-    giorni_avanti, resto = divmod(minuti, 24 * 60)
-    ore, minuti_residui = divmod(resto, 60)
-    return datetime.combine(
-        giorno + timedelta(days=giorni_avanti),
-        time(hour=ore, minute=minuti_residui),
-        tzinfo=dt_util.get_default_time_zone(),
-    )
+    distinti = set(valori.values())
+    return distinti.pop() if len(distinti) == 1 else None
 
 
 def attributi_giorno(giorno: GiornoRaccolta | None, oggi: date) -> dict[str, Any]:
@@ -62,23 +53,34 @@ def attributi_giorno(giorno: GiornoRaccolta | None, oggi: date) -> dict[str, Any
             "data": None,
             "giorni_mancanti": None,
             "orario_esposizione": None,
+            "orari_esposizione": {},
             "orario_raccolta": None,
+            "orari_raccolta": {},
             "straordinario": False,
             "note": None,
         }
 
-    primo = giorno.conferimenti[0]
+    orari = giorno.orari_per_frazione
+    orari_raccolta = giorno.orari_raccolta_per_frazione
+
     return {
         "frazioni": giorno.frazioni,
         "colori": {
             c.frazione: c.colore for c in giorno.conferimenti if c.colore is not None
         },
         "data": giorno.giorno.isoformat(),
-        "giorni_mancanti": (giorno.giorno - oggi).days,
+        # Zero vuol dire stasera. Non scende sotto zero: quando la finestra
+        # scavalca la mezzanotte il giorno di esposizione resta "adesso", non
+        # diventa "ieri".
+        "giorni_mancanti": max(0, (giorno.giorno - oggi).days),
         # Il gestore dichiara la finestra in cui si ESPONE, non quella in cui
         # passa il camion: sono due cose diverse e vanno tenute distinte.
-        "orario_esposizione": primo.orario,
-        "orario_raccolta": primo.orario_raccolta,
+        # Lo scalare c'e' solo quando tutte le frazioni della sera concordano;
+        # la mappa dice sempre la verita', frazione per frazione.
+        "orario_esposizione": _concorde(orari),
+        "orari_esposizione": orari,
+        "orario_raccolta": _concorde(orari_raccolta),
+        "orari_raccolta": orari_raccolta,
         "straordinario": any(c.straordinario for c in giorno.conferimenti),
         "note": next((c.note for c in giorno.conferimenti if c.note), None),
     }

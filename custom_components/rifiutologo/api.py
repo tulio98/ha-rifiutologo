@@ -22,6 +22,7 @@ import logging
 import re
 import socket
 from typing import Any, Final
+from urllib.parse import quote
 
 import aiohttp
 
@@ -127,6 +128,24 @@ class Conferimento:
         return re.sub(r"[^a-z0-9]+", "_", self.frazione.casefold()).strip("_")
 
     @property
+    def fine_minuti_effettiva(self) -> int | None:
+        """Chiusura in minuti, oltre le 24 ore se la finestra scavalca la mezzanotte.
+
+        Ritorna None quando il gestore NON dichiara una finestra, e cioe' quando
+        oraInizio e oraFine coincidono. In quel caso e' il campo testuale
+        `orario` a dire che cosa intende: a Faenza "entro le 04:00", che e' una
+        scadenza, altrove "dalle 20:00", che e' un'apertura senza chiusura.
+        Fabbricare una durata di 24 ore sarebbe peggio che non darne nessuna.
+
+        Verificato sul backend il 3 settembre 2026: Padova 20:00->24:00 (finestra
+        regolare), Bologna 20:00->06:00 (scavalca), Faenza 04:00->04:00 (scadenza).
+        """
+        inizio, fine = self.inizio_minuti, self.fine_minuti
+        if inizio is None or fine is None or fine == inizio:
+            return None
+        return fine + MINUTI_IN_UN_GIORNO if fine < inizio else fine
+
+    @property
     def inizio_minuti(self) -> int | None:
         """Minuti dalla mezzanotte dell'inizio esposizione, se dichiarato."""
         return _minuti(self.ora_inizio)
@@ -147,6 +166,53 @@ class GiornoRaccolta:
 
     giorno: date
     conferimenti: tuple[Conferimento, ...]
+
+    @property
+    def apertura_minuti(self) -> int | None:
+        """Il piu' presto fra gli inizi di esposizione dichiarati, se ce n'e' uno.
+
+        Si prende il minimo e non il primo della lista: l'ordine con cui il
+        gestore elenca i conferimenti non e' garantito, e in una sera con piu'
+        frazioni la finestra utile e' quella che si apre prima.
+        """
+        inizi = [
+            c.inizio_minuti for c in self.conferimenti if c.inizio_minuti is not None
+        ]
+        return min(inizi) if inizi else None
+
+    @property
+    def chiusura_minuti(self) -> int:
+        """Minuti dalla mezzanotte in cui l'ultima finestra della sera si chiude.
+
+        Puo' superare i 1440 quando la finestra scavalca la mezzanotte. Se
+        nessun conferimento dichiara una finestra il confine e' la mezzanotte:
+        e' la scelta prudente, non un orario inventato.
+        """
+        fini = [
+            c.fine_minuti_effettiva
+            for c in self.conferimenti
+            if c.fine_minuti_effettiva is not None
+        ]
+        return max(fini) if fini else MINUTI_IN_UN_GIORNO
+
+    @property
+    def orari_per_frazione(self) -> dict[str, str]:
+        """Orario di esposizione dichiarato, frazione per frazione.
+
+        Le frazioni di una stessa sera non hanno per forza lo stesso orario:
+        promuovere il primo conferimento a rappresentante del giorno sarebbe
+        una semplificazione che ogni tanto mente.
+        """
+        return {c.frazione: c.orario for c in self.conferimenti if c.orario is not None}
+
+    @property
+    def orari_raccolta_per_frazione(self) -> dict[str, str]:
+        """Orario di raccolta dichiarato, frazione per frazione."""
+        return {
+            c.frazione: c.orario_raccolta
+            for c in self.conferimenti
+            if c.orario_raccolta is not None
+        }
 
     @property
     def frazioni(self) -> list[str]:
@@ -390,7 +456,9 @@ class RifiutologoClient:
                 Allegato(
                     id=_intero(voce.get("id")),
                     nome=nome,
-                    url=f"{ALLEGATI_BASE_URL}{percorso.lstrip('/')}"
+                    # I nomi dei file contengono spazi e parentesi in molti
+                    # comuni: senza codifica l'URL non e' valido.
+                    url=f"{ALLEGATI_BASE_URL}{quote(percorso.lstrip('/'), safe='/')}"
                     if percorso
                     else None,
                 )
@@ -451,7 +519,13 @@ class RifiutologoClient:
 
         giorni_raccolta.sort(key=lambda g: g.giorno)
 
-        allegati = await self.allegati(comune_id, via_id, civico_id)
+        try:
+            allegati = await self.allegati(comune_id, via_id, civico_id)
+        except RifiutologoError as errore:
+            # Gli allegati sono un di piu': il calendario e' gia' in mano e non
+            # deve cadere per una chiamata accessoria.
+            _LOGGER.debug("getAllegatiPap.php non ha risposto: %s", errore)
+            allegati = []
 
         return Calendario(
             nota=_testo(grezzo.get("notaPap")) or "",

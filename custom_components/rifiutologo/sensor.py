@@ -12,7 +12,8 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .api import GiornoRaccolta
 from .const import icona_per_frazione
 from .coordinator import RifiutologoConfigEntry, RifiutologoCoordinator
-from .entity import RifiutologoEntity, attributi_giorno, istante
+from .entity import RifiutologoEntity, attributi_giorno
+from .orari import apertura
 
 NESSUNA = "nessuna"
 LUNGHEZZA_MASSIMA_STATO = 255
@@ -45,23 +46,24 @@ class _SensoreBase(RifiutologoEntity, SensorEntity):
         return self.coordinator.oggi
 
     @property
-    def _giorno_di_oggi(self) -> GiornoRaccolta | None:
-        """La raccolta prevista per stasera, se c'e'."""
-        if (calendario := self.coordinator.data) is None:
-            return None
-        return calendario.del_giorno(self._oggi)
+    def _prossimo_giorno(self) -> GiornoRaccolta | None:
+        """La raccolta di cui ci si deve ancora occupare."""
+        return self.coordinator.attuale
 
     @property
-    def _prossimo_giorno(self) -> GiornoRaccolta | None:
-        """La prima raccolta da oggi compreso in avanti."""
-        if (calendario := self.coordinator.data) is None:
-            return None
-        prossimi = calendario.prossimi(self._oggi)
-        return prossimi[0] if prossimi else None
+    def _giorno_di_oggi(self) -> GiornoRaccolta | None:
+        """La raccolta da esporre adesso, se il momento e' arrivato.
+
+        Non basta confrontare la data con oggi: dove la finestra scavalca la
+        mezzanotte, alle due di notte si e' ancora in tempo per esporre la
+        raccolta di ieri sera, e quella e' la risposta giusta.
+        """
+        giorno = self._prossimo_giorno
+        return giorno if giorno is not None and giorno.giorno <= self._oggi else None
 
 
 class SensoreEsposizioneStasera(_SensoreBase):
-    """Che cosa va messo fuori questa sera. E' il sensore da usare per le notifiche."""
+    """Che cosa va messo fuori adesso. E' il sensore da usare per le notifiche."""
 
     _attr_translation_key = "esposizione_stasera"
 
@@ -71,7 +73,7 @@ class SensoreEsposizioneStasera(_SensoreBase):
 
     @property
     def native_value(self) -> str | None:
-        """Elenco delle frazioni di stasera, oppure "nessuna"."""
+        """Elenco delle frazioni da esporre, oppure "nessuna"."""
         if self.coordinator.data is None:
             return None
         if (giorno := self._giorno_di_oggi) is None:
@@ -92,7 +94,7 @@ class SensoreEsposizioneStasera(_SensoreBase):
 
 
 class SensoreProssimaRaccolta(_SensoreBase):
-    """La data della prossima raccolta, oggi compreso."""
+    """La data della prossima raccolta, quella in corso compresa."""
 
     _attr_translation_key = "prossima_raccolta"
     _attr_device_class = SensorDeviceClass.DATE
@@ -114,7 +116,10 @@ class SensoreProssimaRaccolta(_SensoreBase):
 
 
 class SensoreProssimaEsposizione(_SensoreBase):
-    """L'istante in cui si apre la prossima finestra di esposizione."""
+    """L'istante in cui si apre la prossima finestra di esposizione.
+
+    Puo' essere nel passato: vuol dire che la finestra e' aperta adesso.
+    """
 
     _attr_translation_key = "prossima_esposizione"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
@@ -127,21 +132,12 @@ class SensoreProssimaEsposizione(_SensoreBase):
     def native_value(self) -> datetime | None:
         """Inizio della finestra dichiarata dal gestore.
 
-        Se il gestore non dichiara un orario si ripiega sulla mezzanotte del
-        giorno di raccolta, che e' il modo onesto di dire "quel giorno".
+        Si prende il piu' presto fra gli inizi della sera, non il primo della
+        lista. Se il gestore non dichiara un orario si ripiega sulla mezzanotte
+        del giorno di raccolta, che e' il modo onesto di dire "quel giorno".
         """
         giorno = self._prossimo_giorno
-        if giorno is None:
-            return None
-        minuti = next(
-            (
-                c.inizio_minuti
-                for c in giorno.conferimenti
-                if c.inizio_minuti is not None
-            ),
-            None,
-        )
-        return istante(giorno.giorno, minuti if minuti is not None else 0)
+        return apertura(giorno) if giorno is not None else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -150,7 +146,7 @@ class SensoreProssimaEsposizione(_SensoreBase):
 
 
 class SensoreGiorniAllaProssima(_SensoreBase):
-    """Quanti giorni mancano: 0 vuol dire stasera."""
+    """Quanti giorni mancano: 0 vuol dire stasera, o finestra gia' aperta."""
 
     _attr_translation_key = "giorni_alla_prossima"
     _attr_native_unit_of_measurement = "d"
@@ -163,7 +159,11 @@ class SensoreGiorniAllaProssima(_SensoreBase):
     def native_value(self) -> int | None:
         """Giorni che mancano alla prossima esposizione."""
         giorno = self._prossimo_giorno
-        return (giorno.giorno - self._oggi).days if giorno else None
+        if giorno is None:
+            return None
+        # Non scende sotto zero: con la finestra ancora aperta alle due di notte
+        # la risposta giusta e' "adesso", non "meno un giorno".
+        return max(0, (giorno.giorno - self._oggi).days)
 
 
 class SensoreZona(_SensoreBase):

@@ -34,7 +34,9 @@
     },
     "error": {
       "cannot_connect": "Cannot reach the provider. Try again in a few minutes.",
-      "nessun_pap": "This address has no kerbside collection: it is served by street containers, and the provider publishes no calendar for it. Check the house number, or try another address."
+      "comune_senza_vie": "The provider lists no streets for this municipality. Pick another one.",
+      "nessun_pap": "This address has no kerbside collection: it is served by street containers, and the provider publishes no calendar for it. Check the house number, or try another address.",
+      "via_senza_civici": "The provider lists no house numbers for this street. Pick another street."
     },
     "abort": {
       "already_configured": "This address is already set up.",

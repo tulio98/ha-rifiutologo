@@ -22,12 +22,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      # Niente "ignore": la pagina di HACS sull'inclusione chiede che questa
+      # action passi senza errori E senza ignore. Il check "brands" e' gia'
+      # soddisfatto dall'icona versionata in custom_components/rifiutologo/brand/,
+      # che il validatore cerca in locale prima di rivolgersi a brands.home-assistant.io.
       - uses: hacs/action@main
         with:
           category: integration
-          # "brands" richiede una pull request accolta in home-assistant/brands:
-          # si toglie questa riga quando l'icona e' stata accettata.
-          ignore: brands
 
   ruff:
     name: ruff

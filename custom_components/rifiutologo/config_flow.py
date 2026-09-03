@@ -33,7 +33,14 @@ from homeassistant.helpers.selector import (
 )
 from homeassistant.util import dt as dt_util
 
-from .api import Civico, Comune, RifiutologoClient, RifiutologoError, Via
+from .api import (
+    Civico,
+    Comune,
+    RifiutologoClient,
+    RifiutologoError,
+    RifiutologoNotFoundError,
+    Via,
+)
 from .const import (
     CONF_CALENDARI_PER_FRAZIONE,
     CONF_CIVICO_ID,
@@ -83,7 +90,7 @@ class RifiutologoConfigFlow(ConfigFlow, domain=DOMAIN):
     # --- passo 1: il comune ----------------------------------------------------
 
     async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None, *, errore: str | None = None
     ) -> ConfigFlowResult:
         """Sceglie il comune fra i 181 serviti."""
         if not self._comuni:
@@ -108,19 +115,26 @@ class RifiutologoConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {vol.Required(CAMPO_COMUNE): _tendina(opzioni)},
             ),
+            errors={"base": errore} if errore else None,
         )
 
     # --- passo 2: la via -------------------------------------------------------
 
     async def async_step_via(
-        self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None, *, errore: str | None = None
     ) -> ConfigFlowResult:
         """Sceglie la via. A Padova sono 2200: la tendina si puo' filtrare."""
-        assert self._comune is not None
+        if self._comune is None:
+            return await self.async_step_user()
 
         if not self._vie:
             try:
                 self._vie = await self._client.vie(self._comune.id)
+            except RifiutologoNotFoundError:
+                # Il comune c'e' ma non ha vie: e' un dato mancante del gestore,
+                # non un guasto di rete, e va detto com'e'.
+                self._comune = None
+                return await self.async_step_user(errore="comune_senza_vie")
             except RifiutologoError:
                 return self.async_abort(reason="cannot_connect")
 
@@ -138,6 +152,7 @@ class RifiutologoConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="via",
             data_schema=vol.Schema({vol.Required(CAMPO_VIA): _tendina(opzioni)}),
+            errors={"base": errore} if errore else None,
             description_placeholders={"comune": self._comune.nome},
         )
 
@@ -147,14 +162,21 @@ class RifiutologoConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Sceglie il civico e verifica che quell'indirizzo abbia il porta a porta."""
-        assert self._comune is not None
-        assert self._via is not None
+        if self._comune is None:
+            return await self.async_step_user()
+        if self._via is None:
+            return await self.async_step_via()
 
         errori: dict[str, str] = {}
 
         if not self._civici:
             try:
                 self._civici = await self._client.civici(self._comune.id, self._via.id)
+            except RifiutologoNotFoundError:
+                # La via esiste ma il gestore non le associa alcun civico. Non e'
+                # la rete: si torna a scegliere la via, dicendo perche'.
+                self._via = None
+                return await self.async_step_via(errore="via_senza_civici")
             except RifiutologoError:
                 return self.async_abort(reason="cannot_connect")
 
@@ -192,8 +214,8 @@ class RifiutologoConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def _concludi(self, civico: Civico) -> ConfigFlowResult:
         """Crea la voce, oppure aggiorna quella esistente se si sta riconfigurando."""
-        assert self._comune is not None
-        assert self._via is not None
+        if self._comune is None or self._via is None:  # pragma: no cover
+            return await self.async_step_user()
 
         identificativo = f"{self._comune.id}-{self._via.id}-{civico.id}"
         titolo = f"{self._via.nome} {civico.numero}, {self._comune.nome}"

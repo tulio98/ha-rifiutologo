@@ -10,8 +10,13 @@ from __future__ import annotations
 import datetime as dt
 import re
 
-from homeassistant.components.calendar import CalendarEntity, CalendarEvent
-from homeassistant.core import HomeAssistant
+from homeassistant.components.calendar import (
+    DOMAIN as DOMINIO_CALENDARIO,
+    CalendarEntity,
+    CalendarEvent,
+)
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
@@ -24,7 +29,8 @@ from .const import (
     icona_per_frazione,
 )
 from .coordinator import RifiutologoConfigEntry, RifiutologoCoordinator
-from .entity import RifiutologoEntity, istante
+from .entity import RifiutologoEntity
+from .orari import istante
 
 
 async def async_setup_entry(
@@ -34,22 +40,72 @@ async def async_setup_entry(
 ) -> None:
     """Crea il calendario complessivo e, se chiesto, quelli per frazione."""
     coordinator = entry.runtime_data
-    entita: list[CalendarEntity] = [CalendarioRaccolta(coordinator)]
+    per_frazione = entry.options.get(
+        CONF_CALENDARI_PER_FRAZIONE, DEFAULT_CALENDARI_PER_FRAZIONE
+    )
+    frazioni_create: set[str] = set()
 
-    if entry.options.get(CONF_CALENDARI_PER_FRAZIONE, DEFAULT_CALENDARI_PER_FRAZIONE):
-        frazioni = coordinator.data.frazioni if coordinator.data else {}
-        entita.extend(
-            CalendarioFrazione(coordinator, frazione, colore)
-            for frazione, colore in frazioni.items()
-        )
+    @callback
+    def _frazioni_mancanti() -> list[CalendarEntity]:
+        """Le entita' per frazione che ancora non esistono."""
+        if not per_frazione or coordinator.data is None:
+            return []
+        nuove: list[CalendarEntity] = []
+        for frazione, colore in coordinator.data.frazioni.items():
+            if frazione in frazioni_create:
+                continue
+            frazioni_create.add(frazione)
+            nuove.append(CalendarioFrazione(coordinator, frazione, colore))
+        return nuove
 
-    async_add_entities(entita)
+    async_add_entities([CalendarioRaccolta(coordinator), *_frazioni_mancanti()])
+    _ripulisci_registro(hass, entry, frazioni_create)
+
+    @callback
+    def _al_dato_nuovo() -> None:
+        """Una frazione stagionale puo' comparire mesi dopo la configurazione.
+
+        Gli sfalci a primavera, per esempio: senza questo l'entita' nascerebbe
+        solo al riavvio successivo di Home Assistant.
+        """
+        if nuove := _frazioni_mancanti():
+            async_add_entities(nuove)
+
+    entry.async_on_unload(coordinator.async_add_listener(_al_dato_nuovo))
+
+
+@callback
+def _ripulisci_registro(
+    hass: HomeAssistant, entry: RifiutologoConfigEntry, frazioni: set[str]
+) -> None:
+    """Toglie dal registro i calendari per frazione che non servono piu'.
+
+    Senza questo, spegnendo l'opzione le entita' resterebbero per sempre nel
+    registro in stato "unavailable": Home Assistant le ripulisce da sola solo
+    quando si rimuove l'intera voce di configurazione.
+    """
+    registro = er.async_get(hass)
+    prefisso = f"{entry.entry_id}_calendario_"
+    attesi = {f"{prefisso}{_chiave(frazione)}" for frazione in frazioni}
+
+    for voce in er.async_entries_for_config_entry(registro, entry.entry_id):
+        if (
+            voce.domain == DOMINIO_CALENDARIO
+            and voce.unique_id.startswith(prefisso)
+            and voce.unique_id not in attesi
+        ):
+            registro.async_remove(voce.entity_id)
 
 
 class _CalendarioBase(RifiutologoEntity, CalendarEntity):
     """Parte comune ai due tipi di calendario."""
 
     _frazione: str | None = None
+
+    def __init__(self, coordinator: RifiutologoCoordinator, chiave: str) -> None:
+        """Prepara la memoria degli eventi gia' costruiti."""
+        super().__init__(coordinator, chiave)
+        self._memoria: list[CalendarEvent] | None = None
 
     @property
     def _con_orario(self) -> bool:
@@ -58,17 +114,33 @@ class _CalendarioBase(RifiutologoEntity, CalendarEntity):
             CONF_EVENTI_CON_ORARIO, DEFAULT_EVENTI_CON_ORARIO
         )
 
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Butta via gli eventi memorizzati: il calendario e' cambiato."""
+        self._memoria = None
+        super()._handle_coordinator_update()
+
     def _eventi(self) -> list[CalendarEvent]:
-        """Tutti gli eventi noti, in ordine."""
-        if (calendario := self.coordinator.data) is None:
-            return []
-        return costruisci_eventi(
-            calendario,
-            con_orario=self._con_orario,
-            indirizzo=self.coordinator.indirizzo,
-            prefisso_uid=self.coordinator.config_entry.entry_id,
-            solo_frazione=self._frazione,
-        )
+        """Gli eventi noti, costruiti una volta per scarico e non a ogni lettura.
+
+        Home Assistant legge lo stato di un'entita' calendario piu' volte per
+        ogni scrittura, e un anno di calendario sono qualche centinaio di
+        eventi: ricostruirli ogni volta si paga senza motivo.
+        """
+        if self._memoria is None:
+            calendario = self.coordinator.data
+            self._memoria = (
+                []
+                if calendario is None
+                else costruisci_eventi(
+                    calendario,
+                    con_orario=self._con_orario,
+                    indirizzo=self.coordinator.indirizzo,
+                    prefisso_uid=self.coordinator.config_entry.entry_id,
+                    solo_frazione=self._frazione,
+                )
+            )
+        return self._memoria
 
     @property
     def event(self) -> CalendarEvent | None:
@@ -132,8 +204,16 @@ def costruisci_eventi(
     """Trasforma il calendario del gestore in eventi di Home Assistant.
 
     Con `con_orario` l'evento copre la finestra di ESPOSIZIONE dichiarata dal
-    gestore (a Padova dalle 20:00 alle 24:00), che e' la cosa che serve davvero
-    per farsi avvisare in tempo. Senza, l'evento e' giornaliero.
+    gestore, che e' la cosa che serve davvero per farsi avvisare in tempo: a
+    Padova dalle 20:00 alle 24:00, a Bologna dalle 20:00 alle 06:00 del mattino
+    dopo.
+
+    Restano giornalieri due casi, e per lo stesso motivo: il gestore non
+    dichiara nessuna finestra. Succede quando mancano gli orari, e quando
+    oraInizio coincide con oraFine, che a Faenza vuol dire "entro le 04:00" e
+    altrove "dalle 20:00" - una scadenza o un'apertura, non una durata. In
+    entrambi i casi la frase esatta del gestore finisce nella descrizione
+    dell'evento, che e' meglio di una durata inventata.
     """
     eventi: list[CalendarEvent] = []
 
@@ -143,16 +223,11 @@ def costruisci_eventi(
                 continue
 
             inizio_minuti = conferimento.inizio_minuti
-            fine_minuti = conferimento.fine_minuti
+            fine_minuti = conferimento.fine_minuti_effettiva
             inizio: dt.date | dt.datetime
             fine: dt.date | dt.datetime
 
-            if (
-                con_orario
-                and inizio_minuti is not None
-                and fine_minuti is not None
-                and fine_minuti > inizio_minuti
-            ):
+            if con_orario and inizio_minuti is not None and fine_minuti is not None:
                 inizio = istante(giorno.giorno, inizio_minuti)
                 fine = istante(giorno.giorno, fine_minuti)
             else:
@@ -168,7 +243,10 @@ def costruisci_eventi(
                     summary=conferimento.frazione,
                     description=_descrizione(conferimento),
                     location=indirizzo,
-                    uid=f"{prefisso_uid}-{giorno.giorno.isoformat()}-{conferimento.chiave}",
+                    uid=(
+                        f"{prefisso_uid}-{giorno.giorno.isoformat()}"
+                        f"-{conferimento.chiave}"
+                    ),
                 )
             )
 

@@ -2,30 +2,67 @@
 """Banco di prova del client, contro l'API vera, senza Home Assistant.
 
     python3 scripts/prova_api.py Padova "VIA BERNARDO TREVISAN" 8
+    python3 scripts/prova_api.py Padova "VIA BERNARDO TREVISAN" 8 --anonimo
 
 Serve a rispondere alla domanda che viene prima di tutte: questo indirizzo ha
 davvero la raccolta porta a porta? Circa un indirizzo su tre, a Padova, non ce
 l'ha, e in quel caso nessuna integrazione potra' mostrare un calendario.
+
+Con `--anonimo` l'uscita non contiene ne' la via ne' il civico ne' i loro
+identificativi: e' la forma da allegare a una segnalazione.
+
+Serve solo aiohttp. Il client viene caricato per percorso, non come parte del
+package, proprio per non tirarsi dietro Home Assistant.
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 from datetime import date, timedelta
-from pathlib import Path
+import importlib.util
+import pathlib
 import sys
 
 import aiohttp
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components"))
+RADICE = pathlib.Path(__file__).resolve().parents[1]
+_PERCORSO_API = RADICE / "custom_components" / "rifiutologo" / "api.py"
 
-from rifiutologo.api import RifiutologoClient, RifiutologoError
+_specifica = importlib.util.spec_from_file_location("rifiutologo_api", _PERCORSO_API)
+if _specifica is None or _specifica.loader is None:  # pragma: no cover
+    raise SystemExit(f"non trovo il client in {_PERCORSO_API}")
+api = importlib.util.module_from_spec(_specifica)
+# Va registrato PRIMA di eseguirlo: @dataclass risale a sys.modules per
+# risolvere le annotazioni, e senza questa riga muore con un AttributeError
+# che non dice niente.
+sys.modules["rifiutologo_api"] = api
+_specifica.loader.exec_module(api)
 
 
-async def principale(comune_cercato: str, via_cercata: str, civico_cercato: str) -> int:
+def _tipo_finestra(conferimento) -> str:
+    """Dice che genere di orario dichiara il gestore per quella frazione."""
+    inizio, fine = conferimento.inizio_minuti, conferimento.fine_minuti
+    if inizio is None or fine is None:
+        return "nessun orario"
+    if fine == inizio:
+        return "scadenza o apertura (inizio == fine)"
+    if fine < inizio:
+        return "finestra che scavalca la mezzanotte"
+    return "finestra regolare"
+
+
+async def principale(
+    comune_cercato: str, via_cercata: str, civico_cercato: str, *, anonimo: bool
+) -> int:
     """Risolve l'indirizzo e stampa il calendario."""
+
+    def riservato(testo: str) -> str:
+        """Nasconde cio' che non deve finire in una segnalazione."""
+        return "(nascosto)" if anonimo else testo
+
     async with aiohttp.ClientSession() as sessione:
-        client = RifiutologoClient(sessione)
+        client = api.RifiutologoClient(sessione)
 
         comuni = await client.comuni()
         print(f"comuni serviti: {len(comuni)}")
@@ -51,7 +88,7 @@ async def principale(comune_cercato: str, via_cercata: str, civico_cercato: str)
             ]
             print(f"via '{via_cercata}' non trovata. Forse: {simili[:10]}")
             return 1
-        print(f"via: {via.nome} id={via.id}")
+        print(f"via: {riservato(via.nome)} id={riservato(str(via.id))}")
 
         civici = await client.civici(comune.id, via.id)
         civico = next((c for c in civici if c.numero == civico_cercato), None)
@@ -61,7 +98,7 @@ async def principale(comune_cercato: str, via_cercata: str, civico_cercato: str)
                 f"{[c.numero for c in civici][:30]}"
             )
             return 1
-        print(f"civico: {civico.numero} id={civico.id}")
+        print(f"civico: {riservato(civico.numero)} id={riservato(str(civico.id))}")
 
         oggi = date.today()
         calendario = await client.calendario(
@@ -82,52 +119,88 @@ async def principale(comune_cercato: str, via_cercata: str, civico_cercato: str)
             )
             return 2
 
-        print(f"\ngiorni di raccolta nei prossimi 365 giorni: {len(calendario.giorni)}")
-
-        frazioni: dict[str, tuple[int, str | None]] = {}
-        for giorno in calendario.giorni:
-            for conferimento in giorno.conferimenti:
-                conteggio, colore = frazioni.get(conferimento.frazione, (0, None))
-                frazioni[conferimento.frazione] = (
-                    conteggio + 1,
-                    colore or conferimento.colore,
-                )
-        print("\nfrazioni:")
-        for nome, (conteggio, colore) in sorted(
-            frazioni.items(), key=lambda kv: -kv[1][0]
-        ):
-            print(f"  {nome:28s} {conteggio:4d} volte   colore {colore or '-'}")
-
-        print("\nprossime 8 esposizioni:")
-        for giorno in calendario.prossimi(oggi)[:8]:
-            primo = giorno.conferimenti[0]
-            quando = giorno.giorno - oggi
-            etichetta = (
-                "STASERA"
-                if quando == timedelta(0)
-                else "domani"
-                if quando == timedelta(days=1)
-                else f"fra {quando.days} giorni"
-            )
-            print(
-                f"  {giorno.giorno.isoformat()} ({etichetta:14s}) "
-                f"{', '.join(giorno.frazioni)}"
-            )
-            print(
-                f"      esposizione {primo.orario or '-'} | "
-                f"raccolta {primo.orario_raccolta or '-'}"
-            )
+        _stampa_calendario(calendario, oggi)
         return 0
 
 
-ARGOMENTI_ATTESI = 4
+def _stampa_calendario(calendario, oggi: date) -> None:
+    """Stampa frazioni, orari dichiarati e prossime esposizioni."""
+    print(f"\ngiorni di raccolta nei prossimi 365 giorni: {len(calendario.giorni)}")
+
+    frazioni: dict[str, tuple[int, str | None]] = {}
+    for giorno in calendario.giorni:
+        for conferimento in giorno.conferimenti:
+            conteggio, colore = frazioni.get(conferimento.frazione, (0, None))
+            frazioni[conferimento.frazione] = (
+                conteggio + 1,
+                colore or conferimento.colore,
+            )
+    print("\nfrazioni:")
+    for nome, (conteggio, colore) in sorted(frazioni.items(), key=lambda kv: -kv[1][0]):
+        print(f"  {nome:28s} {conteggio:4d} volte   colore {colore or '-'}")
+
+    print("\norari dichiarati dal gestore:")
+    visti: set[tuple[str | None, str | None, str | None]] = set()
+    for giorno in calendario.giorni:
+        for conferimento in giorno.conferimenti:
+            chiave = (
+                conferimento.ora_inizio,
+                conferimento.ora_fine,
+                conferimento.orario,
+            )
+            if chiave in visti:
+                continue
+            visti.add(chiave)
+            print(
+                f"  {conferimento.ora_inizio or '--:--'} -> "
+                f"{conferimento.ora_fine or '--:--'}  "
+                f"[{_tipo_finestra(conferimento)}]  {conferimento.orario or ''}"
+            )
+
+    print("\nprossime 8 esposizioni:")
+    for giorno in calendario.prossimi(oggi)[:8]:
+        quando = giorno.giorno - oggi
+        etichetta = (
+            "STASERA"
+            if quando == timedelta(0)
+            else "domani"
+            if quando == timedelta(days=1)
+            else f"fra {quando.days} giorni"
+        )
+        print(
+            f"  {giorno.giorno.isoformat()} ({etichetta:14s}) "
+            f"{', '.join(giorno.frazioni)}"
+        )
+
+
+def main() -> int:
+    """Legge gli argomenti e lancia la prova."""
+    analizzatore = argparse.ArgumentParser(
+        description="Prova un indirizzo contro il backend del Rifiutologo."
+    )
+    analizzatore.add_argument("comune")
+    analizzatore.add_argument("via")
+    analizzatore.add_argument("civico")
+    analizzatore.add_argument(
+        "--anonimo",
+        action="store_true",
+        help="non stampare via, civico e identificativi: da usare nelle segnalazioni",
+    )
+    argomenti = analizzatore.parse_args()
+
+    try:
+        return asyncio.run(
+            principale(
+                argomenti.comune,
+                argomenti.via,
+                argomenti.civico,
+                anonimo=argomenti.anonimo,
+            )
+        )
+    except api.RifiutologoError as errore:
+        print(f"errore: {errore}")
+        return 1
+
 
 if __name__ == "__main__":
-    if len(sys.argv) != ARGOMENTI_ATTESI:
-        print(__doc__)
-        raise SystemExit(64)
-    try:
-        raise SystemExit(asyncio.run(principale(sys.argv[1], sys.argv[2], sys.argv[3])))
-    except RifiutologoError as errore:
-        print(f"errore: {errore}")
-        raise SystemExit(1) from errore
+    sys.exit(main())

@@ -13,6 +13,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.rifiutologo.api import BASE_URL
 from custom_components.rifiutologo.const import (
+    CADENZA_RIALLINEAMENTO,
     CONF_CIVICO_ID,
     DOMAIN,
     UPDATE_INTERVAL_HOURS,
@@ -137,3 +138,83 @@ async def test_gestore_giu_rende_indisponibili(
     await hass.async_block_till_done()
 
     assert _binario(hass, voce).state == STATE_UNAVAILABLE
+
+
+async def test_il_riallineamento_torna_a_riprovare(
+    hass: HomeAssistant, aioclient_mock, freezer
+) -> None:
+    """La rete di sicurezza non deve consumarsi al primo calendario vuoto.
+
+    Un indirizzo senza porta a porta produce un calendario vuoto per sempre, e
+    prima bastava quello per bruciare il tentativo: il giorno in cui il gestore
+    rinumerava davvero, nessuno se ne accorgeva piu' fino al riavvio di Home
+    Assistant. Ora si riprova a cadenza.
+    """
+    freezer.move_to(SERA_DI_RACCOLTA)
+    registra(aioclient_mock, calendario="calendario_vuoto", allegati="allegati_vuoti")
+
+    voce = MockConfigEntry(
+        domain=DOMAIN, title="prova", data=DATI, unique_id="372-26863-1328844"
+    )
+    await hass.config.async_set_time_zone("Europe/Rome")
+    voce.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    def tentativi() -> int:
+        """Ogni riallineamento passa da getComuni.php: si contano quelli."""
+        return sum(1 for c in aioclient_mock.mock_calls if "getComuni.php" in str(c[1]))
+
+    assert tentativi() == 1, "il primo scarico vuoto tenta subito"
+
+    # Qualche giro dopo, ancora fermo: non deve martellare il gestore.
+    for _ in range(3):
+        freezer.tick(timedelta(hours=UPDATE_INTERVAL_HOURS + 1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+    assert tentativi() == 1, "fra un tentativo e l'altro deve passare del tempo"
+
+    # Superata la cadenza, ci riprova.
+    for _ in range(CADENZA_RIALLINEAMENTO):
+        freezer.tick(timedelta(hours=UPDATE_INTERVAL_HOURS + 1))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done()
+    assert tentativi() >= 2, "la rete di sicurezza deve tornare disponibile"
+
+
+async def test_identificativi_inutili_non_vengono_adottati(
+    hass: HomeAssistant, aioclient_mock, freezer
+) -> None:
+    """Se i nuovi identificativi danno un calendario vuoto lo stesso, si torna indietro.
+
+    Altrimenti una terna sbagliata resterebbe in uso per tutta la sessione,
+    nascondendo il problema vero.
+    """
+    freezer.move_to(SERA_DI_RACCOLTA)
+    # Qualunque id chieda, il calendario e' vuoto: il riallineamento trova un id
+    # diverso da quello configurato, ma non risolve niente.
+    aioclient_mock.get(
+        f"{BASE_URL}/getCalendarioPap.php", json=carica("calendario_vuoto")
+    )
+    aioclient_mock.get(f"{BASE_URL}/getComuni.php", json=carica("comuni"))
+    aioclient_mock.get(f"{BASE_URL}/getIndirizzi.php", json=carica("indirizzi"))
+    aioclient_mock.get(f"{BASE_URL}/getNumeriCivici.php", json=carica("civici"))
+    aioclient_mock.get(f"{BASE_URL}/getAllegatiPap.php", json=carica("allegati_vuoti"))
+
+    voce = MockConfigEntry(
+        domain=DOMAIN,
+        title="prova",
+        data={**DATI, CONF_CIVICO_ID: 999999},
+        unique_id="372-26863-999999",
+    )
+    await hass.config.async_set_time_zone("Europe/Rome")
+    voce.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = voce.runtime_data
+    assert coordinator._id_riallineati is None, (
+        "una terna che non risolve niente non va tenuta"
+    )
+    # E la configurazione su disco non viene toccata in nessun caso.
+    assert voce.data[CONF_CIVICO_ID] == 999999

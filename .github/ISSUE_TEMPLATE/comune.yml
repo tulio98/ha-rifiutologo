@@ -19,8 +19,10 @@ body:
     attributes:
       label: Uscita dello script di prova
       description: >-
-        `python3 scripts/prova_api.py <Comune> "<VIA>" <civico>`.
-        Togli pure la riga della via prima di incollare.
+        `python3 scripts/prova_api.py <Comune> "<VIA>" <civico> --anonimo`
+        Con `--anonimo` via, civico e identificativi non compaiono
+        nell'uscita: puoi incollarla cosi' com'e'. Serve solo aiohttp,
+        non Home Assistant.
       render: shell
     validations:
       required: true

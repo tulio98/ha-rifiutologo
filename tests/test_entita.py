@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -15,14 +16,15 @@ from custom_components.rifiutologo.api import BASE_URL
 from custom_components.rifiutologo.const import (
     CONF_CALENDARI_PER_FRAZIONE,
     CONF_EVENTI_CON_ORARIO,
+    CONF_GIORNI_DA_MOSTRARE,
     DOMAIN,
 )
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import STATE_OFF, STATE_ON
+from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from .conftest import registra
+from .conftest import carica, registra
 
 ROMA = ZoneInfo("Europe/Rome")
 # Il primo giorno delle fixture: Organico, esposizione dalle 20:00 alle 24:00.
@@ -240,3 +242,152 @@ async def test_gestore_giu_allo_avvio(
     assert not await hass.config_entries.async_setup(voce.entry_id)
     await hass.async_block_till_done()
     assert voce.state is ConfigEntryState.SETUP_RETRY
+
+
+async def test_bologna_resta_acceso_dopo_la_mezzanotte(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Dove la finestra scavalca la mezzanotte, la sera non finisce a mezzanotte.
+
+    A Bologna si espone "dalle 20:00 alle 06:00": alle due di notte c'e' ancora
+    tempo, e il sensore deve dirlo. Prima della correzione si spegneva alle 24:00
+    e il calendario mostrava un evento giornaliero al posto della finestra.
+    """
+    registra(
+        aioclient_mock, calendario="calendario_bologna", allegati="allegati_bologna"
+    )
+    freezer.move_to(datetime(2026, 9, 3, 21, 0, tzinfo=ROMA))
+    await _avvia(hass, voce)
+
+    assert _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_ON
+    calendario = _stato(hass, voce, "calendar", "calendario")
+    assert calendario.attributes["all_day"] is False
+    assert calendario.attributes["start_time"] == "2026-09-03 20:00:00"
+    assert calendario.attributes["end_time"] == "2026-09-04 06:00:00"
+
+    # Le due di notte: la data e' cambiata, la finestra no.
+    dopo_mezzanotte = datetime(2026, 9, 4, 2, 0, tzinfo=ROMA)
+    freezer.move_to(dopo_mezzanotte)
+    async_fire_time_changed(hass, dopo_mezzanotte)
+    await hass.async_block_till_done()
+
+    binario = _stato(hass, voce, "binary_sensor", "esporre_stasera")
+    assert binario.state == STATE_ON, "la finestra e' ancora aperta"
+    assert binario.attributes["data"] == "2026-09-03"
+    # Non scende sotto zero: la risposta giusta e' "adesso", non "meno un giorno".
+    assert binario.attributes["giorni_mancanti"] == 0
+
+    # Le sette: la finestra si e' chiusa, si guarda avanti.
+    mattina = datetime(2026, 9, 4, 7, 0, tzinfo=ROMA)
+    freezer.move_to(mattina)
+    async_fire_time_changed(hass, mattina)
+    await hass.async_block_till_done()
+
+    assert _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_OFF
+    assert _stato(hass, voce, "sensor", "prossima_raccolta").state == "2026-09-06"
+
+
+async def test_faenza_scadenza_resta_giornaliera(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """A Faenza il gestore dichiara una scadenza, non una finestra."""
+    registra(aioclient_mock, calendario="calendario_faenza", allegati="allegati_faenza")
+    freezer.move_to(datetime(2026, 9, 3, 18, 0, tzinfo=ROMA))
+    await _avvia(hass, voce)
+
+    calendario = _stato(hass, voce, "calendar", "calendario")
+    assert calendario.attributes["all_day"] is True
+    binario = _stato(hass, voce, "binary_sensor", "esporre_stasera")
+    assert binario.state == STATE_ON
+    # La frase esatta del gestore resta a disposizione: e' l'unica cosa vera.
+    assert binario.attributes["orario_esposizione"] == "entro le 04:00"
+
+
+async def test_orari_diversi_per_frazione(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Con orari diversi fra le frazioni, lo scalare tace e la mappa parla."""
+    grezzo = carica("calendario")
+    giorno = grezzo["calendario"][0]
+    secondo = json.loads(json.dumps(giorno["conferimenti"][0]))
+    secondo["macroprodotto"] = {
+        "id": 68,
+        "descrizione": "Carta",
+        "pittogramma": {"nomeFile": "x", "colore": "0093D0"},
+    }
+    secondo["oraInizio"] = "18:00"
+    secondo["orario"] = "dalle 18:00 alle 24:00"
+    giorno["conferimenti"].append(secondo)
+
+    registra(aioclient_mock)
+    aioclient_mock.clear_requests()
+    registra(aioclient_mock)
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{BASE_URL}/getComuni.php", json=carica("comuni"))
+    aioclient_mock.get(f"{BASE_URL}/getIndirizzi.php", json=carica("indirizzi"))
+    aioclient_mock.get(f"{BASE_URL}/getNumeriCivici.php", json=carica("civici"))
+    aioclient_mock.get(f"{BASE_URL}/getCalendarioPap.php", json=grezzo)
+    aioclient_mock.get(f"{BASE_URL}/getAllegatiPap.php", json=carica("allegati"))
+
+    freezer.move_to(datetime(2026, 9, 3, 18, 0, tzinfo=ROMA))
+    await _avvia(hass, voce)
+
+    binario = _stato(hass, voce, "binary_sensor", "esporre_stasera")
+    assert set(binario.attributes["frazioni"]) == {"Organico", "Carta"}
+    # Non concordano: lo scalare sarebbe una mezza verita'.
+    assert binario.attributes["orario_esposizione"] is None
+    assert binario.attributes["orari_esposizione"] == {
+        "Organico": "dalle 20:00 alle 24:00",
+        "Carta": "dalle 18:00 alle 24:00",
+    }
+    # Il sensore dell'istante prende il piu' presto, non il primo della lista.
+    prossima = _stato(hass, voce, "sensor", "prossima_esposizione")
+    assert datetime.fromisoformat(prossima.state).astimezone(ROMA).hour == 18
+
+
+async def test_calendari_per_frazione_spariscono_dal_registro(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Spegnendo l'opzione dal flusso vero, le entita' non restano morte nel registro.
+
+    Si passa dal flusso opzioni e non da async_update_entry proprio perche' il
+    ricaricamento della voce fa parte di cio' che si vuole verificare: e'
+    OptionsFlowWithReload a innescarlo, ed e' li' che scatta la pulizia.
+    """
+    registra(aioclient_mock)
+    freezer.move_to(SERA_DI_RACCOLTA)
+    voce.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        voce, options={CONF_CALENDARI_PER_FRAZIONE: True}
+    )
+    await hass.config.async_set_time_zone("Europe/Rome")
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    registro = er.async_get(hass)
+
+    def calendari() -> list[str]:
+        return sorted(
+            e.unique_id
+            for e in er.async_entries_for_config_entry(registro, voce.entry_id)
+            if e.domain == "calendar"
+        )
+
+    assert len(calendari()) == 7, "il complessivo piu' le sei frazioni di Padova"
+
+    risultato = await hass.config_entries.options.async_init(voce.entry_id)
+    await hass.config_entries.options.async_configure(
+        risultato["flow_id"],
+        {
+            CONF_EVENTI_CON_ORARIO: True,
+            CONF_CALENDARI_PER_FRAZIONE: False,
+            CONF_GIORNI_DA_MOSTRARE: 365,
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert calendari() == [f"{voce.entry_id}_calendario"]
+    # E nessuna resta appesa nello stato macchina.
+    assert not [
+        s for s in hass.states.async_all("calendar") if s.state == STATE_UNAVAILABLE
+    ]

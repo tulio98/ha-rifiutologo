@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .api import Calendario, RifiutologoClient, RifiutologoError
+from .api import Calendario, GiornoRaccolta, RifiutologoClient, RifiutologoError
 from .const import (
+    CADENZA_RIALLINEAMENTO,
     CONF_CIVICO_ID,
     CONF_CIVICO_NUMERO,
     CONF_COMUNE_ID,
@@ -25,6 +26,7 @@ from .const import (
     DOMAIN,
     UPDATE_INTERVAL_HOURS,
 )
+from .orari import giorno_in_corso, prossimo_confine
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,11 +40,16 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
 
     def __init__(self, hass: HomeAssistant, entry: RifiutologoConfigEntry) -> None:
         """Prepara il coordinator sulla sessione HTTP condivisa di Home Assistant."""
+        # Il nome finisce nei log a ogni scarico, e i log finiscono nelle
+        # segnalazioni: qui ci va il comune e un troncone dell'entry_id, mai via
+        # e civico. E' la stessa regola che segue la diagnostica.
+        self._etichetta = f"{entry.data[CONF_COMUNE_NOME]} ({entry.entry_id[:7]})"
+
         super().__init__(
             hass,
             _LOGGER,
             config_entry=entry,
-            name=f"{DOMAIN} {entry.title}",
+            name=f"{DOMAIN} {self._etichetta}",
             update_interval=timedelta(hours=UPDATE_INTERVAL_HOURS),
             # Il calendario di un anno e' un oggetto immutabile e confrontabile:
             # senza questo, ogni scarico riscriverebbe lo stato di tutte le
@@ -55,7 +62,9 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
         # cambiassero, il calendario tornerebbe vuoto senza dire niente: qui si
         # tiene una risoluzione alternativa fatta per nome, valida per la sessione.
         self._id_riallineati: tuple[int, int, int] | None = None
-        self._riallineamento_tentato = False
+        self._scarichi_vuoti = 0
+
+        self._disdici_risveglio: CALLBACK_TYPE | None = None
 
     # --- lettura della configurazione -----------------------------------------
 
@@ -76,7 +85,7 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
 
     @property
     def indirizzo(self) -> str:
-        """Indirizzo leggibile, per titoli e attributi."""
+        """Indirizzo leggibile, per il nome del dispositivo e per gli attributi."""
         return f"{self.via_nome} {self.civico_numero}, {self.comune_nome}"
 
     @property
@@ -99,60 +108,105 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
         """La data di oggi nel fuso orario di Home Assistant."""
         return dt_util.now().date()
 
-    # --- ciclo di vita ---------------------------------------------------------
+    @property
+    def attuale(self) -> GiornoRaccolta | None:
+        """La raccolta di cui ci si deve ancora occupare.
+
+        E' quella di stasera finche' c'e' tempo per esporre, e subito dopo la
+        successiva. Tutti i sensori si appoggiano a questa sola nozione.
+        """
+        return giorno_in_corso(self.data, dt_util.now())
+
+    # --- risveglio ai confini della giornata -----------------------------------
 
     async def _async_setup(self) -> None:
-        """Predispone il risveglio di mezzanotte, una sola volta."""
-        # I dati non cambiano a mezzanotte, ma "stasera" si sposta di un giorno:
-        # senza questo, il sensore dell'esposizione resterebbe fermo a ieri fino
-        # allo scarico successivo, che puo' essere fra dodici ore.
-        self.config_entry.async_on_unload(
-            async_track_time_change(
-                self.hass, self._alla_mezzanotte, hour=0, minute=0, second=10
-            )
-        )
+        """Fa in modo che il risveglio programmato non sopravviva alla voce."""
+        self.config_entry.async_on_unload(self._annulla_risveglio)
 
     @callback
-    def _alla_mezzanotte(self, adesso: object) -> None:
-        """Rinfresca le entita' senza richiamare il gestore."""
-        _LOGGER.debug("Mezzanotte: ricalcolo le entita' di %s", self.indirizzo)
+    def _annulla_risveglio(self) -> None:
+        """Disdice il risveglio in sospeso, se c'e'."""
+        if self._disdici_risveglio is not None:
+            self._disdici_risveglio()
+            self._disdici_risveglio = None
+
+    @callback
+    def _programma_risveglio(self, calendario: Calendario | None) -> None:
+        """Programma il ricalcolo al prossimo confine di giornata."""
+        self._annulla_risveglio()
+        quando = prossimo_confine(calendario, dt_util.now())
+        self._disdici_risveglio = async_track_point_in_time(
+            self.hass, self._al_confine, quando
+        )
+        _LOGGER.debug("%s: prossimo ricalcolo alle %s", self._etichetta, quando)
+
+    @callback
+    def _al_confine(self, adesso: datetime) -> None:
+        """Ricalcola le entita' senza richiamare il gestore, e si riprogramma.
+
+        A mezzanotte cambia la data di oggi; alla chiusura della finestra la
+        raccolta di stasera passa il testimone alla successiva. In nessuno dei
+        due casi e' arrivato un dato nuovo, quindi non si disturba il gestore.
+        """
         self.async_update_listeners()
+        self._programma_risveglio(self.data)
+
+    # --- scarico ---------------------------------------------------------------
+
+    async def _scarica(self) -> Calendario:
+        """Un giro secco sul gestore con gli identificativi in uso."""
+        comune_id, via_id, civico_id = self._identificativi
+        return await self.client.calendario(
+            comune_id,
+            via_id,
+            civico_id,
+            da=self.oggi,
+            giorni=self.giorni_da_mostrare,
+        )
 
     async def _async_update_data(self) -> Calendario:
         """Scarica il calendario dell'indirizzo configurato."""
-        comune_id, via_id, civico_id = self._identificativi
         try:
-            calendario = await self.client.calendario(
-                comune_id,
-                via_id,
-                civico_id,
-                da=self.oggi,
-                giorni=self.giorni_da_mostrare,
-            )
-            if not calendario.giorni and not self._riallineamento_tentato:
-                self._riallineamento_tentato = True
-                if await self._riallinea():
-                    comune_id, via_id, civico_id = self._identificativi
-                    calendario = await self.client.calendario(
-                        comune_id,
-                        via_id,
-                        civico_id,
-                        da=self.oggi,
-                        giorni=self.giorni_da_mostrare,
-                    )
+            calendario = await self._scarica()
+            if not calendario.giorni:
+                calendario = await self._forse_riallinea(calendario)
         except RifiutologoError as errore:
             raise UpdateFailed(str(errore)) from errore
 
-        if not calendario.giorni:
-            # Non e' un errore: circa un indirizzo su tre, a Padova, e' servito da
-            # cassonetti stradali e non ha alcun calendario. Va detto una volta,
-            # non a ogni scarico.
-            _LOGGER.log(
-                logging.INFO if self.data is None else logging.DEBUG,
-                "%s non ha raccolta porta a porta: il calendario e' vuoto",
-                self.indirizzo,
-            )
+        self._programma_risveglio(calendario)
         return calendario
+
+    async def _forse_riallinea(self, vuoto: Calendario) -> Calendario:
+        """Di fronte a un calendario vuoto, prova a ritrovare l'indirizzo per nome.
+
+        Un calendario vuoto ha tre cause diverse e indistinguibili dalla
+        risposta: l'indirizzo non ha il porta a porta (il caso normale, e non e'
+        un guasto), gli identificativi non valgono piu', oppure il backend ha
+        cambiato forma. Si tenta ogni tanto e non una volta sola: se il primo
+        tentativo lo brucia un indirizzo senza porta a porta, il giorno in cui
+        il gestore rinumera davvero la rete di sicurezza deve esserci ancora.
+        """
+        self._scarichi_vuoti += 1
+        if (self._scarichi_vuoti - 1) % CADENZA_RIALLINEAMENTO:
+            return vuoto
+
+        precedenti = self._id_riallineati
+        if not await self._riallinea():
+            return vuoto
+
+        nuovo = await self._scarica()
+        if nuovo.giorni:
+            self._scarichi_vuoti = 0
+            return nuovo
+
+        # Gli identificativi nuovi non hanno risolto niente: si torna indietro
+        # invece di trascinarli per tutta la sessione.
+        _LOGGER.debug(
+            "%s: gli identificativi ricalcolati danno un calendario vuoto lo stesso",
+            self._etichetta,
+        )
+        self._id_riallineati = precedenti
+        return vuoto
 
     async def _riallinea(self) -> bool:
         """Ricalcola gli id partendo dai nomi salvati.
@@ -160,8 +214,7 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
         Serve se il gestore rinumera il proprio database: i nomi restano, gli id
         no. Ritorna True se la terna e' cambiata, cioe' se vale la pena riprovare.
         """
-        dati = self.config_entry.data
-        attuali = (dati[CONF_COMUNE_ID], dati[CONF_VIA_ID], dati[CONF_CIVICO_ID])
+        attuali = self._identificativi
         try:
             comuni = await self.client.comuni()
             comune = next(
@@ -183,7 +236,9 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
             if civico is None:
                 return False
         except RifiutologoError as errore:
-            _LOGGER.debug("Riallineamento non riuscito: %s", errore)
+            _LOGGER.debug(
+                "%s: riallineamento non riuscito: %s", self._etichetta, errore
+            )
             return False
 
         nuovi = (comune.id, via.id, civico.id)
@@ -191,10 +246,10 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
             return False
 
         _LOGGER.warning(
-            "Il gestore ha cambiato gli identificativi di %s: %s diventa %s. "
-            "Uso i nuovi per questa sessione; se il problema si ripete, "
-            "riconfigura l'integrazione",
-            self.indirizzo,
+            "%s: il gestore ha cambiato gli identificativi dell'indirizzo, "
+            "%s diventa %s. Uso i nuovi per questa sessione; se il problema si "
+            "ripete, riconfigura l'integrazione",
+            self._etichetta,
             attuali,
             nuovi,
         )

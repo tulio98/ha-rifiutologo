@@ -20,7 +20,7 @@ from custom_components.rifiutologo.api import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .conftest import CIVICO_ID, COMUNE_ID, VIA_ID, registra
+from .conftest import CIVICO_ID, COMUNE_ID, VIA_ID, carica, registra
 
 
 @pytest.mark.parametrize(
@@ -182,3 +182,64 @@ async def test_voci_malformate_vengono_saltate(
     comuni = await client.comuni()
     assert [c.nome for c in comuni] == ["Buono", "Anche questo"]
     assert comuni[1].etichetta == "Anche questo"
+
+
+async def test_url_del_pdf_codificato(hass: HomeAssistant, aioclient_mock) -> None:
+    """I nomi dei PDF hanno spazi e parentesi: senza codifica l'URL non e' valido.
+
+    Quello di Bologna e' un caso vero: "PAP calendario BOLOGNA Famiglia e Azienda
+    (Santo Stefano Collina).pdf".
+    """
+    registra(
+        aioclient_mock, calendario="calendario_bologna", allegati="allegati_bologna"
+    )
+    client = RifiutologoClient(async_get_clientsession(hass))
+    calendario = await client.calendario(
+        COMUNE_ID, VIA_ID, CIVICO_ID, da=date(2026, 9, 3), giorni=30
+    )
+
+    url = calendario.allegati[0].url
+    assert url is not None
+    assert " " not in url
+    assert "%20" in url
+    assert "%28" in url and "%29" in url, "le parentesi vanno codificate"
+    # La struttura dell'URL non deve essere stata rovinata dalla codifica.
+    assert url.startswith("https://webapp-ambiente.gruppohera.it/assets/uploads/")
+    assert url.endswith(".pdf")
+
+
+async def test_gli_allegati_non_portano_giu_il_calendario(
+    hass: HomeAssistant, aioclient_mock
+) -> None:
+    """Il calendario e' il dato principale: non cade per una chiamata accessoria."""
+    aioclient_mock.get(f"{BASE_URL}/getCalendarioPap.php", json=carica("calendario"))
+    aioclient_mock.get(f"{BASE_URL}/getAllegatiPap.php", status=500)
+
+    client = RifiutologoClient(async_get_clientsession(hass))
+    calendario = await client.calendario(
+        COMUNE_ID, VIA_ID, CIVICO_ID, da=date(2026, 9, 3), giorni=30
+    )
+
+    assert len(calendario.giorni) == 12, "il calendario e' arrivato ed e' intero"
+    assert calendario.allegati == ()
+    assert calendario.zona is None
+
+
+async def test_finestre_dei_tre_comuni(hass: HomeAssistant, aioclient_mock) -> None:
+    """Il client legge i tre modi in cui il gestore dichiara un orario."""
+    attesi = {
+        "calendario": ("20:00", "24:00", 1440),
+        "calendario_bologna": ("20:00", "06:00", 1800),
+        "calendario_faenza": ("04:00", "04:00", None),
+    }
+    for nome, (inizio, fine, effettiva) in attesi.items():
+        aioclient_mock.clear_requests()
+        registra(aioclient_mock, calendario=nome, allegati="allegati_vuoti")
+        client = RifiutologoClient(async_get_clientsession(hass))
+        calendario = await client.calendario(
+            COMUNE_ID, VIA_ID, CIVICO_ID, da=date(2026, 9, 3), giorni=30
+        )
+        conferimento = calendario.giorni[0].conferimenti[0]
+        assert conferimento.ora_inizio == inizio, nome
+        assert conferimento.ora_fine == fine, nome
+        assert conferimento.fine_minuti_effettiva == effettiva, nome

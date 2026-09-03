@@ -31,6 +31,12 @@ MAX_GIORNI_DA_MOSTRARE: Final = 365
 # l'ordine di grandezza giusto per il polling, non i minuti.
 UPDATE_INTERVAL_HOURS: Final = 12
 
+# Ogni quanti scarichi VUOTI si riprova a ritrovare l'indirizzo per nome. Con un
+# aggiornamento ogni 12 ore fa circa una volta a settimana: abbastanza raro da
+# non pesare (l'elenco delle vie di Padova sono 191 KB), abbastanza spesso da
+# accorgersi entro pochi giorni se il gestore rinumera il database.
+CADENZA_RIALLINEAMENTO: Final = 14
+
 ATTRIBUTION: Final = "Dati forniti da Il Rifiutologo - Gruppo Hera"
 MANUFACTURER: Final = "Gruppo Hera"
 

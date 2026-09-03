@@ -19,7 +19,7 @@ from homeassistant.config_entries import SOURCE_RECONFIGURE, SOURCE_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
-from .conftest import CIVICO_ID, COMUNE_ID, VIA_ID, registra
+from .conftest import CIVICO_ID, COMUNE_ID, VIA_ID, carica, registra
 
 
 @pytest.fixture(autouse=True)
@@ -27,8 +27,18 @@ def _carica_integrazione(enable_custom_integrations: None) -> None:
     """Ogni test di questo file passa dal loader di Home Assistant."""
 
 
-async def _fino_al_civico(hass: HomeAssistant, *, source: str = SOURCE_USER, **kwargs):
-    """Porta il flusso fino al terzo passo."""
+async def _fino_al_civico(
+    hass: HomeAssistant,
+    *,
+    source: str = SOURCE_USER,
+    atteso: str | None = "civico",
+    **kwargs,
+):
+    """Porta il flusso fino al terzo passo.
+
+    Con `atteso=None` non pretende di esserci arrivato: serve ai test in cui il
+    flusso deve deviare, per esempio quando la via non ha civici.
+    """
     risultato = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": source, **kwargs}
     )
@@ -43,7 +53,8 @@ async def _fino_al_civico(hass: HomeAssistant, *, source: str = SOURCE_USER, **k
     risultato = await hass.config_entries.flow.async_configure(
         risultato["flow_id"], {"via": str(VIA_ID)}
     )
-    assert risultato["step_id"] == "civico"
+    if atteso is not None:
+        assert risultato["step_id"] == atteso
     return risultato
 
 
@@ -165,3 +176,52 @@ async def test_opzioni(hass: HomeAssistant, gestore, voce: MockConfigEntry) -> N
     # Il selettore numerico restituisce un float: deve arrivare intero.
     assert voce.options[CONF_GIORNI_DA_MOSTRARE] == 90
     assert isinstance(voce.options[CONF_GIORNI_DA_MOSTRARE], int)
+
+
+async def test_via_senza_civici_non_e_un_guasto_di_rete(
+    hass: HomeAssistant, aioclient_mock
+) -> None:
+    """Una via che il gestore non associa a nessun civico non deve uccidere il flusso.
+
+    Prima si abortiva con `cannot_connect`, cioe' dando la colpa alla rete per un
+    dato che semplicemente manca, e l'utente doveva ricominciare da capo.
+    """
+    aioclient_mock.get(f"{BASE_URL}/getComuni.php", json=carica("comuni"))
+    aioclient_mock.get(f"{BASE_URL}/getIndirizzi.php", json=carica("indirizzi"))
+    aioclient_mock.get(f"{BASE_URL}/getNumeriCivici.php", json=[])
+
+    risultato = await _fino_al_civico(hass, atteso=None)
+
+    # Si torna a scegliere la via, spiegando perche'.
+    assert risultato["type"] is FlowResultType.FORM
+    assert risultato["step_id"] == "via"
+    assert risultato["errors"] == {"base": "via_senza_civici"}
+    # E la tendina e' ancora piena: si sceglie un'altra via e si prosegue.
+    assert risultato["data_schema"].schema["via"].config["options"]
+
+
+async def test_comune_senza_vie(hass: HomeAssistant, aioclient_mock) -> None:
+    """Un comune senza vie riporta al primo passo, non a un abort."""
+    aioclient_mock.get(f"{BASE_URL}/getComuni.php", json=carica("comuni"))
+    aioclient_mock.get(f"{BASE_URL}/getIndirizzi.php", json=[])
+
+    risultato = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    risultato = await hass.config_entries.flow.async_configure(
+        risultato["flow_id"], {"comune": str(COMUNE_ID)}
+    )
+    assert risultato["type"] is FlowResultType.FORM
+    assert risultato["step_id"] == "user"
+    assert risultato["errors"] == {"base": "comune_senza_vie"}
+
+
+async def test_rete_giu_resta_un_abort(hass: HomeAssistant, aioclient_mock) -> None:
+    """Il vero errore di rete deve continuare ad abortire, non a far riprovare."""
+    aioclient_mock.get(f"{BASE_URL}/getComuni.php", json=carica("comuni"))
+    aioclient_mock.get(f"{BASE_URL}/getIndirizzi.php", json=carica("indirizzi"))
+    aioclient_mock.get(f"{BASE_URL}/getNumeriCivici.php", status=503)
+
+    risultato = await _fino_al_civico(hass, atteso=None)
+    assert risultato["type"] is FlowResultType.ABORT
+    assert risultato["reason"] == "cannot_connect"

@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Prima di aprire: se le entità sono vuote, prova il tuo indirizzo con
-        `python3 scripts/prova_api.py <Comune> "<VIA IN MAIUSCOLO>" <civico>`.
+        `python3 scripts/prova_api.py <Comune> "<VIA IN MAIUSCOLO>" <civico> --anonimo`
         Se risponde «nessuna raccolta porta a porta», non è un difetto: quell'indirizzo
         è servito da cassonetti stradali e il gestore non pubblica un calendario.
   - type: input
@@ -42,5 +42,7 @@ body:
     id: log
     attributes:
       label: Log
-      description: Le righe che contengono `rifiutologo`.
+      description: >-
+        Le righe che contengono `rifiutologo`. Non contengono via e civico,
+        ma dai comunque un'occhiata prima di incollarle.
       render: shell
