@@ -1,0 +1,13 @@
+{
+  "domain": "rifiutologo",
+  "name": "Il Rifiutologo (Gruppo Hera)",
+  "codeowners": ["@tulio98"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/tulio98/ha-rifiutologo",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/tulio98/ha-rifiutologo/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

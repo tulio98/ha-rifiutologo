@@ -1,0 +1,92 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Scegli il comune",
+        "description": "Calendario della raccolta porta a porta per i comuni serviti dal Gruppo Hera e dalle sue societa' territoriali, fra cui AcegasApsAmga a Padova e Trieste.",
+        "data": {
+          "comune": "Comune"
+        },
+        "data_description": {
+          "comune": "L'elenco arriva direttamente dal gestore."
+        }
+      },
+      "via": {
+        "title": "Scegli la via",
+        "description": "Le vie di {comune}, scritte come le scrive il gestore. Comincia a digitare per filtrare l'elenco.",
+        "data": {
+          "via": "Via"
+        },
+        "data_description": {
+          "via": "Se la tua via non c'e', il gestore non la serve con quel nome."
+        }
+      },
+      "civico": {
+        "title": "Scegli il numero civico",
+        "description": "I civici di {via}. Il turno di raccolta dipende dal civico esatto: la zona si ricava da li' e non viene mai chiesta.",
+        "data": {
+          "civico": "Numero civico"
+        },
+        "data_description": {
+          "civico": "I civici possono avere un suffisso, per esempio 1/A oppure 2/2."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Non riesco a raggiungere il gestore. Riprova fra qualche minuto.",
+      "nessun_pap": "Questo indirizzo non ha la raccolta porta a porta: e' servito da cassonetti stradali e il gestore non pubblica alcun calendario. Controlla il civico, oppure prova un altro indirizzo."
+    },
+    "abort": {
+      "already_configured": "Questo indirizzo e' gia' configurato.",
+      "cannot_connect": "Non riesco a raggiungere il gestore. Riprova fra qualche minuto.",
+      "reconfigure_successful": "Indirizzo aggiornato."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opzioni",
+        "description": "Come vengono costruiti gli eventi del calendario e quanto lontano guardare.",
+        "data": {
+          "eventi_con_orario": "Eventi con la finestra oraria",
+          "calendari_per_frazione": "Un calendario per ogni frazione",
+          "giorni_da_mostrare": "Giorni da guardare in avanti"
+        },
+        "data_description": {
+          "eventi_con_orario": "Acceso: ogni evento copre la finestra di esposizione dichiarata dal gestore, per esempio dalle 20:00 alle 24:00. Spento: eventi giornalieri.",
+          "calendari_per_frazione": "Aggiunge un'entita' calendario per ogni frazione, ciascuna col colore ufficiale del gestore. I colori li mostra Home Assistant dalla 2026.6 in poi.",
+          "giorni_da_mostrare": "Fra due raccolte del vetro possono passare 35 giorni: un orizzonte corto rischia di nasconderlo."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "esporre_stasera": {
+        "name": "Raccolta stasera"
+      }
+    },
+    "calendar": {
+      "raccolta": {
+        "name": "Raccolta"
+      }
+    },
+    "sensor": {
+      "esposizione_stasera": {
+        "name": "Da esporre stasera"
+      },
+      "giorni_alla_prossima": {
+        "name": "Giorni alla prossima"
+      },
+      "prossima_esposizione": {
+        "name": "Prossima esposizione"
+      },
+      "prossima_raccolta": {
+        "name": "Prossima raccolta"
+      },
+      "zona": {
+        "name": "Zona di raccolta"
+      }
+    }
+  }
+}

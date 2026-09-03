@@ -18,9 +18,11 @@ CONF_CIVICO_NUMERO: Final = "civico_numero"
 # --- chiavi delle opzioni ------------------------------------------------------
 
 CONF_EVENTI_CON_ORARIO: Final = "eventi_con_orario"
+CONF_CALENDARI_PER_FRAZIONE: Final = "calendari_per_frazione"
 CONF_GIORNI_DA_MOSTRARE: Final = "giorni_da_mostrare"
 
 DEFAULT_EVENTI_CON_ORARIO: Final = True
+DEFAULT_CALENDARI_PER_FRAZIONE: Final = False
 DEFAULT_GIORNI_DA_MOSTRARE: Final = 365
 MIN_GIORNI_DA_MOSTRARE: Final = 30
 MAX_GIORNI_DA_MOSTRARE: Final = 365

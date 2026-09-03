@@ -163,6 +163,21 @@ class Calendario:
         """Nome della zona di raccolta, se il gestore lo dichiara."""
         return self.allegati[0].nome if self.allegati else None
 
+    @property
+    def frazioni(self) -> dict[str, str | None]:
+        """Frazioni presenti nel calendario, ciascuna col suo colore ufficiale.
+
+        L'ordine e' quello di prima comparsa, cioe' quello del gestore. Il colore
+        e' il primo non nullo incontrato: e' stabile fra comuni diversi, mentre
+        gli id dei macroprodotti no.
+        """
+        trovate: dict[str, str | None] = {}
+        for giorno in self.giorni:
+            for conferimento in giorno.conferimenti:
+                if trovate.get(conferimento.frazione) is None:
+                    trovate[conferimento.frazione] = conferimento.colore
+        return trovate
+
     def del_giorno(self, giorno: date) -> GiornoRaccolta | None:
         """La raccolta di un giorno preciso, se c'e'."""
         for g in self.giorni:

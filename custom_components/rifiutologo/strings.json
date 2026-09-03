@@ -1,0 +1,92 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Choose your municipality",
+        "description": "Waste collection calendar for the municipalities served by Gruppo Hera and its local companies, such as AcegasApsAmga in Padua and Trieste.",
+        "data": {
+          "comune": "Municipality"
+        },
+        "data_description": {
+          "comune": "The list comes straight from the provider."
+        }
+      },
+      "via": {
+        "title": "Choose your street",
+        "description": "Streets of {comune}, spelled the way the provider spells them. Start typing to filter the list.",
+        "data": {
+          "via": "Street"
+        },
+        "data_description": {
+          "via": "If your street is missing, the provider does not serve it under that name."
+        }
+      },
+      "civico": {
+        "title": "Choose your house number",
+        "description": "House numbers on {via}. The collection round is decided by the exact number, so the zone is worked out from it and never asked for.",
+        "data": {
+          "civico": "House number"
+        },
+        "data_description": {
+          "civico": "House numbers may carry a suffix, for example 1/A or 2/2."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the provider. Try again in a few minutes.",
+      "nessun_pap": "This address has no kerbside collection: it is served by street containers, and the provider publishes no calendar for it. Check the house number, or try another address."
+    },
+    "abort": {
+      "already_configured": "This address is already set up.",
+      "cannot_connect": "Cannot reach the provider. Try again in a few minutes.",
+      "reconfigure_successful": "Address updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "description": "How the calendar events are built and how far ahead to look.",
+        "data": {
+          "eventi_con_orario": "Events with a time window",
+          "calendari_per_frazione": "One calendar per waste type",
+          "giorni_da_mostrare": "Days to look ahead"
+        },
+        "data_description": {
+          "eventi_con_orario": "On: each event covers the put-out window the provider publishes, for example 8 PM to midnight. Off: plain all-day events.",
+          "calendari_per_frazione": "Adds one calendar entity per waste type, each carrying the provider's official colour. Colours are shown by Home Assistant 2026.6 and later.",
+          "giorni_da_mostrare": "Glass can be up to 35 days apart, so a short horizon may hide it."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "esporre_stasera": {
+        "name": "Collection tonight"
+      }
+    },
+    "calendar": {
+      "raccolta": {
+        "name": "Collection"
+      }
+    },
+    "sensor": {
+      "esposizione_stasera": {
+        "name": "Waste to put out tonight"
+      },
+      "giorni_alla_prossima": {
+        "name": "Days to next collection"
+      },
+      "prossima_esposizione": {
+        "name": "Next put-out time"
+      },
+      "prossima_raccolta": {
+        "name": "Next collection"
+      },
+      "zona": {
+        "name": "Collection zone"
+      }
+    }
+  }
+}

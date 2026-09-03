@@ -1,0 +1,34 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "esporre_stasera": {
+        "default": "mdi:trash-can-outline",
+        "state": {
+          "on": "mdi:trash-can"
+        }
+      }
+    },
+    "calendar": {
+      "raccolta": {
+        "default": "mdi:recycle"
+      }
+    },
+    "sensor": {
+      "esposizione_stasera": {
+        "default": "mdi:trash-can-outline"
+      },
+      "giorni_alla_prossima": {
+        "default": "mdi:calendar-clock"
+      },
+      "prossima_esposizione": {
+        "default": "mdi:clock-alert-outline"
+      },
+      "prossima_raccolta": {
+        "default": "mdi:calendar-arrow-right"
+      },
+      "zona": {
+        "default": "mdi:map-marker-radius"
+      }
+    }
+  }
+}
