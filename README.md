@@ -12,7 +12,7 @@ le entità giuste per farsi avvisare la sera in cui bisogna mettere fuori il sac
 > **In English** — Home Assistant integration for the kerbside waste collection calendar of
 > Gruppo Hera and its local companies (AcegasApsAmga in Padua and Trieste, Marche Multiservizi,
 > Hera in Emilia-Romagna): 181 Italian municipalities. It creates a calendar entity, a
-> "put it out tonight" binary sensor and four sensors. Address is picked from three
+> "put it out tonight" binary sensor and four sensors. The address is picked from three
 > dropdowns, no typing. Unofficial, community-made, not affiliated with Gruppo Hera.
 
 ---
@@ -35,17 +35,34 @@ Per ogni indirizzo configurato nasce un dispositivo con queste entità:
 
 | Entità | Che cos'è | A cosa serve |
 |---|---|---|
-| `calendar.…_raccolta` | Calendario di tutte le frazioni | Il pannello Calendario, la card, e i trigger `calendar` |
-| `binary_sensor.…_raccolta_stasera` | Acceso se stasera si espone | Il mattone delle automazioni |
-| `sensor.…_da_esporre_stasera` | `Organico, Carta` oppure `nessuna` | Il testo della notifica |
-| `sensor.…_prossima_raccolta` | Data della prossima esposizione | Card e template |
-| `sensor.…_prossima_esposizione` | Istante di apertura della finestra | `device_class: timestamp`, si legge come «fra 3 ore» |
-| `sensor.…_giorni_alla_prossima` | `0` vuol dire stasera | Soglie e colori |
-| `sensor.…_zona` | `Calendario Padova Q6 2026` | Controllare di aver preso il calendario giusto (disattivata di serie) |
+| **Raccolta** (`calendar`) | Calendario di tutte le frazioni | Il pannello Calendario, la card, e i trigger `calendar` |
+| **Raccolta stasera** (`binary_sensor`) | Acceso finché c'è tempo per esporre | Il mattone delle automazioni |
+| **Da esporre stasera** (`sensor`) | `Organico, Carta` oppure `nessuna` | Il testo della notifica |
+| **Prossima raccolta** (`sensor`) | Data della prossima esposizione | Card e template |
+| **Prossima esposizione** (`sensor`) | Istante di apertura della finestra | `device_class: timestamp`, si legge come «fra 3 ore» |
+| **Giorni alla prossima** (`sensor`) | `0` vuol dire stasera | Soglie e colori |
+| **Zona di raccolta** (`sensor`) | `Calendario Padova Q6 2026` | Controllare di aver preso il calendario giusto (disattivata di serie) |
 
-Ogni entità porta con sé, negli attributi: `frazioni`, `colori` (la palette **ufficiale** del
-gestore, in esadecimale), `orario_esposizione`, `orario_raccolta`, `giorni_mancanti`,
-`straordinario`, `note`.
+> **Gli `entity_id` dipendono dalla lingua di Home Assistant**, perché li genera lui dal nome
+> dell'entità: in italiano diventano `sensor.<indirizzo>_da_esporre_stasera`, in inglese
+> `sensor.<indirizzo>_waste_to_put_out_tonight`. Negli esempi qui sotto c'è `CAMBIAMI`:
+> aprine il dispositivo e copia gli id veri.
+
+Le entità che descrivono **una sera di raccolta** — *Raccolta stasera*, *Da esporre stasera*,
+*Prossima raccolta* e *Prossima esposizione* — portano con sé questi attributi:
+
+| Attributo | Contenuto |
+|---|---|
+| `frazioni` | `["Indifferenziato", "Organico"]` |
+| `colori` | `{"Organico": "#701100", ...}` — la palette **ufficiale** del gestore |
+| `data` | la data della sera di esposizione |
+| `giorni_mancanti` | `0` vuol dire stasera; non scende mai sotto zero |
+| `orario_esposizione` | la frase del gestore, **solo se vale per tutte le frazioni della sera** |
+| `orari_esposizione` | mappa frazione → orario: dice sempre la verità |
+| `orario_raccolta` / `orari_raccolta` | idem, per il passaggio del mezzo |
+| `straordinario`, `note` | quello che il gestore segnala di eccezionale |
+
+*Giorni alla prossima* espone solo il numero; *Zona di raccolta* espone `pdf`, `allegati` e `nota`.
 
 ### I calendari a colori
 
@@ -59,23 +76,51 @@ inventato: arriva dal campo `pittogramma.colore` dell'API.
 | Indifferenziato | `#7C7C81` |
 | Carta | `#0093D0` |
 | Imballaggi in vetro | `#15A53F` |
-| Lattine e Imballaggi in plastica | `#FDB913` |
+| Lattine | `#FDB913` |
+| Imballaggi in plastica | `#FDB913` |
 
+Lattine e plastica hanno lo stesso colore perché il gestore le fa esporre insieme.
 I colori li disegna Home Assistant **dalla 2026.6** in poi; sulle versioni precedenti i
 calendari separati funzionano lo stesso, semplicemente senza tinta.
 
+## L'orario di esposizione, che cambia da comune a comune
+
+Questo è il punto in cui è più facile sbagliare, e l'integrazione lo tratta in tre modi
+perché il gestore lo dichiara in tre modi. Sono tutti e tre verificati sul backend:
+
+| Come lo dichiara il gestore | Esempio | Che cosa ne fa l'integrazione |
+|---|---|---|
+| Finestra dentro la giornata | **Padova** `20:00 → 24:00` | Evento dalle 20:00 alla mezzanotte |
+| Finestra che **scavalca la mezzanotte** | **Bologna** `20:00 → 06:00` | Evento fino alle 06:00 **del giorno dopo**; alle due di notte il sensore è ancora acceso |
+| Inizio uguale a fine | **Faenza** `04:00 → 04:00`, testo *«entro le 04:00»* | Non è una durata, è una scadenza: l'evento resta **giornaliero** e la frase esatta del gestore finisce nella descrizione |
+
+Il terzo caso merita una riga in più: inventare una finestra di 24 ore sarebbe stato comodo e
+sbagliato. Quando il gestore non dichiara una durata, l'integrazione non se la fabbrica.
+
+Conseguenza pratica: **il sensore «Raccolta stasera» si spegne alla chiusura della finestra,
+non a mezzanotte.** A Padova coincidono; a Bologna no.
+
 ## Chi è coperto
 
-I **181 comuni** serviti dal Gruppo Hera e dalle sue società territoriali, fra cui:
+I **181 comuni** serviti dal Gruppo Hera e dalle sue società territoriali. L'elenco non è
+cablato qui dentro: viene chiesto al gestore ogni volta, quindi resta aggiornato da solo.
 
-**Veneto e Friuli (AcegasApsAmga)** — Padova, Trieste, Abano Terme, Albignasego, Noventa
-Padovana, Ponte San Nicolò, Casalserugo, Selvazzano Dentro…
-**Emilia-Romagna (Hera)** — Bologna, Modena, Ferrara, Ravenna, Rimini, Forlì, Cesena, Imola,
-Faenza, Riccione…
-**Marche (Marche Multiservizi)** — Pesaro, Urbino, Fano…
+| Zona | Quanti | Qualche nome |
+|---|---|---|
+| Bologna e provincia | 47 | Bologna, Budrio, Casalecchio di Reno, Baricella |
+| Pesaro e Urbino (Marche Multiservizi) | 38 | Pesaro, Urbino, Urbania, Cagli, Fermignano |
+| Modena e provincia | 32 | Modena, Formigine, Fiorano Modenese, Castelfranco Emilia |
+| Ravenna e provincia | 18 | Ravenna, Faenza, Cervia, Bagnacavallo |
+| Rimini e provincia | 18 | Rimini, Cattolica, Bellaria Igea Marina, Riccione |
+| Forlì-Cesena | 17 | Cesena, Cesenatico, Gambettola, Bagno di Romagna |
+| **Padova (AcegasApsAmga)** | 6 | Padova, Abano Terme, Albignasego, Noventa Padovana, Ponte San Nicolò, Casalserugo |
+| **Trieste (AcegasApsAmga)** | 1 | Trieste |
+| Ferrara | 1 | Ferrara |
+| Firenze (alta valle) | 3 | Firenzuola, Marradi, Palazzuolo sul Senio |
 
-L'elenco completo non è cablato qui dentro: viene chiesto al gestore ogni volta, quindi resta
-aggiornato da solo.
+Se il tuo comune non è in questa tendina, il gestore non lo serve con Il Rifiutologo:
+**Forlì, Fano e Selvazzano Dentro, per esempio, non ci sono**, anche se le rispettive
+province sono coperte.
 
 ## Requisiti
 
@@ -113,15 +158,16 @@ Tre passi, tutti a tendina, tutti alimentati dall'elenco vero del gestore:
 
 **La zona non te la chiede nessuno**, ed è giusto così: l'API lavora per indirizzo, e il turno
 di raccolta è una conseguenza del civico. Se vuoi la conferma di quale calendario ti è toccato,
-attiva l'entità `sensor.…_zona`: risponde per esempio `Calendario Padova Q6 2026`.
+attiva l'entità *Zona di raccolta*: risponde per esempio `Calendario Padova Q6 2026`.
 
 Puoi aggiungere **più indirizzi**: casa, i genitori, l'ufficio. Ognuno diventa un dispositivo a sé.
+E se traslochi, **Riconfigura** cambia indirizzo senza perdere la cronologia.
 
 ### Opzioni
 
 | Opzione | Di serie | Che cosa cambia |
 |---|---|---|
-| Eventi con la finestra oraria | acceso | Gli eventi coprono la finestra di esposizione (a Padova 20:00→24:00) invece di essere giornalieri. Serve per far scattare i trigger `calendar` all'ora giusta. |
+| Eventi con la finestra oraria | acceso | Gli eventi coprono la finestra di esposizione invece di essere giornalieri. Serve per far scattare i trigger `calendar` all'ora giusta. |
 | Un calendario per ogni frazione | spento | Aggiunge un'entità calendario per frazione, col colore ufficiale |
 | Giorni da guardare in avanti | 365 | Fra due raccolte del **vetro** possono passare 35 giorni: con un orizzonte corto sparisce |
 
@@ -145,13 +191,14 @@ automation:
           title: "Stasera si espone"
           message: >-
             {{ state_attr('binary_sensor.CAMBIAMI_raccolta_stasera', 'frazioni') | join(', ') }}
-            — {{ state_attr('binary_sensor.CAMBIAMI_raccolta_stasera', 'orario_esposizione') }}
+            — {{ state_attr('binary_sensor.CAMBIAMI_raccolta_stasera', 'orario_esposizione')
+                 or 'vedi il calendario' }}
 ```
 
 ### All'apertura vera della finestra
 
-Con gli eventi orari attivi, il trigger scatta alle 20:00 in punto perché è **il gestore** a
-dire che si comincia alle 20:00 — non un orario che hai scelto tu.
+Con gli eventi orari attivi, il trigger scatta all'ora che dice **il gestore** — non a un
+orario scelto da te. A Padova sono le 20:00, a Bologna pure, a Ferrara le 07:00.
 
 ```yaml
 automation:
@@ -175,13 +222,10 @@ automation:
   - alias: "Rifiuti - annuncio"
     triggers:
       - trigger: state
-        entity_id: sensor.CAMBIAMI_prossima_esposizione
-        to: ~
+        entity_id: binary_sensor.CAMBIAMI_raccolta_stasera
+        to: "on"
     conditions:
       - condition: numeric_state
-        entity_id: sensor.CAMBIAMI_giorni_alla_prossima
-        below: 1
-      - condition: state
         entity_id: zone.home
         above: 0
     actions:
@@ -200,14 +244,14 @@ automation:
 type: vertical-stack
 cards:
   - type: markdown
-    content: >-
+    content: |-
       {% set b = 'binary_sensor.CAMBIAMI_raccolta_stasera' %}
       {% if is_state(b, 'on') %}
       ## Stasera: {{ state_attr(b, 'frazioni') | join(' + ') }}
-      {{ state_attr(b, 'orario_esposizione') }}
+      {{ state_attr(b, 'orario_esposizione') or '' }}
       {% else %}
       ## Stasera niente
-      Prossima: **{{ states('sensor.CAMBIAMI_da_esporre_stasera') }}**
+      Prossima: **{{ states('sensor.CAMBIAMI_prossima_raccolta') }}**
       {{ state_attr('sensor.CAMBIAMI_prossima_raccolta', 'frazioni') | join(' + ') }}
       fra {{ states('sensor.CAMBIAMI_giorni_alla_prossima') }} giorni
       {% endif %}
@@ -234,16 +278,21 @@ https://webapp-ambiente.gruppohera.it/rifiutologo/rifiutologoweb/
 
 Il calendario viene chiesto **due volte al giorno**: è un calendario annuale, cambia qualche
 volta l'anno, e non c'è motivo di disturbare il gestore più spesso. Le entità si ricalcolano da
-sole a mezzanotte, così «stasera» resta «stasera».
+sole a mezzanotte **e alla chiusura della finestra di esposizione**, così «stasera» resta
+«stasera» senza altre chiamate.
 
-Puoi provare il tuo indirizzo **prima di installare**, senza Home Assistant:
+### Provare un indirizzo prima di installare
+
+Serve solo `aiohttp`, non Home Assistant:
 
 ```bash
 python3 scripts/prova_api.py Padova "VIA BERNARDO TREVISAN" 8
 ```
 
 Ti dice se quell'indirizzo ha il porta a porta, in quale zona sei, quali frazioni sono
-previste e quando sono le prossime otto esposizioni.
+previste, **che genere di orario dichiara il gestore** e quando sono le prossime otto
+esposizioni. Con `--anonimo` via, civico e identificativi non compaiono nell'uscita: è la
+forma da allegare a una segnalazione.
 
 ## Limiti, e cose da sapere
 
@@ -252,7 +301,7 @@ previste e quando sono le prossime otto esposizioni.
   gestore spegne un endpoint non c'è integrazione che tenga.
 - **Gli identificativi non sono garantiti stabili.** Se il gestore rinumerasse il proprio
   database, l'integrazione se ne accorge (il calendario torna vuoto), riprova a risolvere
-  l'indirizzo **per nome** e lo scrive nel log.
+  l'indirizzo **per nome** e lo scrive nel log. Ci riprova a cadenza, non una volta sola.
 - **Gli indirizzi senza porta a porta non sono un guasto.** Sono la normalità in buona parte
   dei centri storici. La configurazione te lo dice subito.
 - **Le festività** non sono un caso a parte: il gestore semplicemente non pubblica quei giorni.
@@ -263,8 +312,9 @@ Se ti serve solo la data e non ti interessano gli orari di esposizione né i col
 una strada, ed è onesto dirlo: la source **`ilrifiutologo_it`** dentro
 [mampfes/hacs_waste_collection_schedule](https://github.com/mampfes/hacs_waste_collection_schedule),
 che è già nello store HACS di serie. Fa una cosa sola — data e nome della frazione — e la fa
-bene. Questa integrazione nasce per tenersi anche il resto: la finestra di esposizione, i
-colori ufficiali, la zona, e tre tendine al posto della via da scrivere in maiuscolo esatto.
+bene. Questa integrazione nasce per tenersi anche il resto: la finestra di esposizione (anche
+dove scavalca la mezzanotte), i colori ufficiali, la zona, e tre tendine al posto della via da
+scrivere in maiuscolo esatto.
 
 ## Contribuire
 
@@ -272,13 +322,17 @@ Segnalazioni e pull request sono benvenute.
 
 Se la tua città è servita dal Gruppo Hera e qualcosa non torna — un'etichetta di frazione che
 non ha l'icona giusta, una finestra oraria diversa da quella padovana — apri una issue e
-allega la **diagnostica** (Impostazioni → Dispositivi e servizi → Il Rifiutologo → i tre
-puntini → *Scarica diagnostica*). Via e civico vengono oscurati automaticamente: il comune no,
-perché senza quello la segnalazione non serve a niente.
+allega l'uscita di `scripts/prova_api.py ... --anonimo`, oppure la **diagnostica**
+(Impostazioni → Dispositivi e servizi → Il Rifiutologo → i tre puntini → *Scarica diagnostica*).
+Via e civico vengono oscurati automaticamente: il comune no, perché senza quello la
+segnalazione non serve a niente.
 
 ```bash
-ruff check . && ruff format --check .
+ruff check . && ruff format --check . && pytest
 ```
+
+L'icona si rigenera con `python3 scripts/genera_icona.py` (serve Pillow): se ne vuoi un'altra,
+cambia lo script o sostituisci i due PNG in `custom_components/rifiutologo/brand/`.
 
 ## Licenza e trasparenza
 
@@ -286,8 +340,9 @@ ruff check . && ruff format --check .
 
 Progetto **della comunità, non ufficiale**. Non è affiliato, sponsorizzato né approvato dal
 Gruppo Hera, da AcegasApsAmga, da Marche Multiservizi o dal servizio Il Rifiutologo. I marchi
-citati appartengono ai rispettivi titolari. I dati sono di Il Rifiutologo — Gruppo Hera e
-restano soggetti alle loro condizioni d'uso.
+citati appartengono ai rispettivi titolari, e sono usati solo per dire con quale servizio
+l'integrazione parla. I dati sono di Il Rifiutologo — Gruppo Hera e restano soggetti alle loro
+condizioni d'uso.
 
 [hacs]: https://github.com/hacs/integration
 [apri-hacs]: https://my.home-assistant.io/redirect/hacs_repository/?owner=tulio98&repository=ha-rifiutologo&category=integration
