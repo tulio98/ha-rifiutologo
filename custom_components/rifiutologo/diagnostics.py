@@ -7,12 +7,7 @@ from typing import Any
 from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.core import HomeAssistant
 
-from .const import (
-    CONF_CIVICO_ID,
-    CONF_CIVICO_NUMERO,
-    CONF_VIA_ID,
-    CONF_VIA_NOME,
-)
+from .const import CONF_CIVICO_ID, CONF_CIVICO_NUMERO, CONF_VIA_ID, CONF_VIA_NOME
 from .coordinator import RifiutologoConfigEntry
 
 # Il comune non si nasconde: senza quello una segnalazione e' inutile. Via e

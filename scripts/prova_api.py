@@ -12,14 +12,14 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date, timedelta
-import sys
 from pathlib import Path
+import sys
 
 import aiohttp
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components"))
 
-from rifiutologo.api import RifiutologoClient, RifiutologoError  # noqa: E402
+from rifiutologo.api import RifiutologoClient, RifiutologoError
 
 
 async def principale(comune_cercato: str, via_cercata: str, civico_cercato: str) -> int:
@@ -33,16 +33,22 @@ async def principale(comune_cercato: str, via_cercata: str, civico_cercato: str)
             (c for c in comuni if c.nome.casefold() == comune_cercato.casefold()), None
         )
         if comune is None:
-            simili = [c.nome for c in comuni if comune_cercato.casefold() in c.nome.casefold()]
+            simili = [
+                c.nome for c in comuni if comune_cercato.casefold() in c.nome.casefold()
+            ]
             print(f"comune '{comune_cercato}' non trovato. Forse: {simili[:10]}")
             return 1
         print(f"comune: {comune.nome} ({comune.provincia}) id={comune.id}")
 
         vie = await client.vie(comune.id)
         print(f"vie: {len(vie)}")
-        via = next((v for v in vie if v.nome.casefold() == via_cercata.casefold()), None)
+        via = next(
+            (v for v in vie if v.nome.casefold() == via_cercata.casefold()), None
+        )
         if via is None:
-            simili = [v.nome for v in vie if via_cercata.casefold() in v.nome.casefold()]
+            simili = [
+                v.nome for v in vie if via_cercata.casefold() in v.nome.casefold()
+            ]
             print(f"via '{via_cercata}' non trovata. Forse: {simili[:10]}")
             return 1
         print(f"via: {via.nome} id={via.id}")
@@ -107,12 +113,17 @@ async def principale(comune_cercato: str, via_cercata: str, civico_cercato: str)
                 f"  {giorno.giorno.isoformat()} ({etichetta:14s}) "
                 f"{', '.join(giorno.frazioni)}"
             )
-            print(f"      esposizione {primo.orario or '-'} | raccolta {primo.orario_raccolta or '-'}")
+            print(
+                f"      esposizione {primo.orario or '-'} | "
+                f"raccolta {primo.orario_raccolta or '-'}"
+            )
         return 0
 
 
+ARGOMENTI_ATTESI = 4
+
 if __name__ == "__main__":
-    if len(sys.argv) != 4:
+    if len(sys.argv) != ARGOMENTI_ATTESI:
         print(__doc__)
         raise SystemExit(64)
     try:

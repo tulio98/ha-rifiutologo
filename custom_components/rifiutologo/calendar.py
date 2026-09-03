@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .api import Calendario
+from .api import Calendario, Conferimento
 from .const import (
     CONF_CALENDARI_PER_FRAZIONE,
     CONF_EVENTI_CON_ORARIO,
@@ -176,7 +176,7 @@ def costruisci_eventi(
     return eventi
 
 
-def _descrizione(conferimento) -> str | None:  # noqa: ANN001
+def _descrizione(conferimento: Conferimento) -> str | None:
     """Testo che spiega quando esporre e quando passa il mezzo."""
     pezzi: list[str] = []
     if conferimento.orario:

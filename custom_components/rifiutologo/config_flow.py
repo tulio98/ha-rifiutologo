@@ -213,7 +213,10 @@ class RifiutologoConfigFlow(ConfigFlow, domain=DOMAIN):
             # Cambiare indirizzo e' lecito riconfigurando; finire sopra a un
             # indirizzo gia' configurato altrove no.
             for altra in self._async_current_entries():
-                if altra.entry_id != voce.entry_id and altra.unique_id == identificativo:
+                if (
+                    altra.entry_id != voce.entry_id
+                    and altra.unique_id == identificativo
+                ):
                     return self.async_abort(reason="already_configured")
             return self.async_update_reload_and_abort(
                 voce, unique_id=identificativo, title=titolo, data=dati

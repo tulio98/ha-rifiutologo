@@ -42,6 +42,13 @@ USER_AGENT: Final = "ha-rifiutologo (+https://github.com/tulio98/ha-rifiutologo)
 
 _ORA_RE: Final = re.compile(r"^\s*(\d{1,2})[:.](\d{2})\s*$")
 
+ORA_MASSIMA: Final = 24
+"""Il gestore scrive "24:00", che e' la mezzanotte del giorno dopo."""
+
+MINUTO_MASSIMO: Final = 59
+MINUTI_IN_UN_GIORNO: Final = 24 * 60
+LUNGHEZZA_DATA_ISO: Final = 10
+
 
 class RifiutologoError(Exception):
     """Errore generico del client."""
@@ -197,10 +204,10 @@ def _minuti(valore: str | None) -> int | None:
     if (m := _ORA_RE.match(valore)) is None:
         return None
     ore, minuti = int(m.group(1)), int(m.group(2))
-    if not 0 <= ore <= 24 or not 0 <= minuti <= 59:
+    if not 0 <= ore <= ORA_MASSIMA or not 0 <= minuti <= MINUTO_MASSIMO:
         return None
     totale = ore * 60 + minuti
-    return totale if totale <= 24 * 60 else None
+    return totale if totale <= MINUTI_IN_UN_GIORNO else None
 
 
 def _colore(grezzo: Any) -> str | None:
@@ -208,7 +215,9 @@ def _colore(grezzo: Any) -> str | None:
     if not isinstance(grezzo, str):
         return None
     pulito = grezzo.strip().lstrip("#")
-    if len(pulito) not in (3, 6) or not all(c in "0123456789abcdefABCDEF" for c in pulito):
+    if len(pulito) not in (3, 6) or not all(
+        c in "0123456789abcdefABCDEF" for c in pulito
+    ):
         return None
     return f"#{pulito.upper()}"
 
@@ -219,16 +228,16 @@ def _data(grezzo: Any) -> date | None:
     Si prendono i primi dieci caratteri di proposito: il backend marca tutto come
     UTC ma intende una data locale, e convertire il fuso sposterebbe i giorni.
     """
-    if not isinstance(grezzo, str) or len(grezzo) < 10:
+    if not isinstance(grezzo, str) or len(grezzo) < LUNGHEZZA_DATA_ISO:
         return None
     try:
-        return date.fromisoformat(grezzo[:10])
+        return date.fromisoformat(grezzo[:LUNGHEZZA_DATA_ISO])
     except ValueError:
         return None
 
 
 def _intero(grezzo: Any) -> int | None:
-    """Converte in intero cio' che l'API manda a volte come numero e a volte come stringa."""
+    """Converte in intero un valore che l'API manda ora come numero ora come stringa."""
     if isinstance(grezzo, bool):
         return None
     if isinstance(grezzo, int):
@@ -278,7 +287,8 @@ class RifiutologoClient:
             return json.loads(testo)
         except ValueError as err:
             raise RifiutologoConnectionError(
-                f"{endpoint} non ha risposto JSON (primi 120 caratteri: {testo[:120]!r})"
+                f"{endpoint} non ha risposto JSON "
+                f"(primi 120 caratteri: {testo[:120]!r})"
             ) from err
 
     async def comuni(self) -> list[Comune]:
@@ -303,14 +313,18 @@ class RifiutologoClient:
                 )
             )
         if not comuni:
-            raise RifiutologoConnectionError("getComuni.php ha risposto un elenco vuoto")
+            raise RifiutologoConnectionError(
+                "getComuni.php ha risposto un elenco vuoto"
+            )
         return comuni
 
     async def vie(self, comune_id: int) -> list[Via]:
         """Le vie di un comune. A Padova sono 2200."""
         grezzo = await self._get("getIndirizzi.php", {"idComune": comune_id})
         if not isinstance(grezzo, list):
-            raise RifiutologoConnectionError("getIndirizzi.php non ha risposto una lista")
+            raise RifiutologoConnectionError(
+                "getIndirizzi.php non ha risposto una lista"
+            )
 
         vie: list[Via] = []
         for voce in grezzo:
@@ -376,7 +390,9 @@ class RifiutologoClient:
                 Allegato(
                     id=_intero(voce.get("id")),
                     nome=nome,
-                    url=f"{ALLEGATI_BASE_URL}{percorso.lstrip('/')}" if percorso else None,
+                    url=f"{ALLEGATI_BASE_URL}{percorso.lstrip('/')}"
+                    if percorso
+                    else None,
                 )
             )
         return allegati
@@ -422,7 +438,9 @@ class RifiutologoClient:
             conferimenti = tuple(
                 c
                 for c in (
-                    _conferimento(v) for v in voce.get("conferimenti") or [] if isinstance(v, dict)
+                    _conferimento(v)
+                    for v in voce.get("conferimenti") or []
+                    if isinstance(v, dict)
                 )
                 if c is not None
             )
@@ -452,7 +470,9 @@ def _conferimento(voce: dict[str, Any]) -> Conferimento | None:
         return None
 
     pittogramma = macroprodotto.get("pittogramma")
-    colore = _colore(pittogramma.get("colore")) if isinstance(pittogramma, dict) else None
+    colore = (
+        _colore(pittogramma.get("colore")) if isinstance(pittogramma, dict) else None
+    )
 
     return Conferimento(
         frazione=frazione,

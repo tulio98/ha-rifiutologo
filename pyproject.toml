@@ -20,6 +20,9 @@ select = [
 ignore = [
   "D203",  # incompatibile con D211
   "D213",  # incompatibile con D212
+  # D401 impone il modo imperativo INGLESE ("Return", non "Returns"). I docstring
+  # di questo progetto sono in italiano e la regola non ha modo di valutarli.
+  "D401",
 ]
 
 [tool.ruff.lint.pydocstyle]

@@ -179,9 +179,7 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
                 return False
 
             civici = await self.client.civici(comune.id, via.id)
-            civico = next(
-                (c for c in civici if c.numero == self.civico_numero), None
-            )
+            civico = next((c for c in civici if c.numero == self.civico_numero), None)
             if civico is None:
                 return False
         except RifiutologoError as errore:

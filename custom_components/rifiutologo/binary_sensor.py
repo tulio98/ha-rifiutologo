@@ -1,4 +1,4 @@
-"""Il binary sensor che risponde alla domanda: stasera devo esporre qualcosa?"""
+"""Il binary sensor che risponde a una sola domanda: stasera si espone o no."""
 
 from __future__ import annotations
 
@@ -52,7 +52,5 @@ class BinarioEsporreStasera(RifiutologoEntity, BinarySensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Che cosa va esposto, con orari e colori."""
         calendario = self.coordinator.data
-        giorno = (
-            calendario.del_giorno(self.coordinator.oggi) if calendario else None
-        )
+        giorno = calendario.del_giorno(self.coordinator.oggi) if calendario else None
         return attributi_giorno(giorno, self.coordinator.oggi)
