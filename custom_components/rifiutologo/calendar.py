@@ -66,6 +66,10 @@ async def async_setup_entry(
                     coordinator,
                     frazione,
                     colori[frazione],
+                    # Il ripiego e' irraggiungibile finche' `frazioni` e
+                    # `chiavi_frazione` scorrono gli stessi conferimenti, come
+                    # fanno oggi: costa nulla, ed evita un KeyError se un domani
+                    # le due mappe divergessero.
                     _chiave_libera(
                         chiavi.get(frazione) or slug(frazione), chiavi_usate
                     ),

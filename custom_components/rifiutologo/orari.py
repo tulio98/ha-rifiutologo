@@ -169,11 +169,12 @@ def prossima_raccolta(
 def prossimo_confine(calendario: Calendario | None, adesso: datetime) -> datetime:
     """Il primo momento in cui le entita' vanno ricalcolate.
 
-    Quattro cose spostano il significato delle entita' senza che arrivi un dato
+    Tre cose spostano il significato delle entita' senza che arrivi un dato
     nuovo: la mezzanotte, che cambia la data di oggi e quindi la prossima
-    raccolta; l'apertura della sera in corso, che accende cio' che si puo'
-    esporre; e la scadenza di OGNI SINGOLA frazione, non solo l'ultima - perche'
-    in una sera con finestre diverse ognuna sparisce dall'elenco per conto suo.
+    raccolta; l'apertura della prima raccolta ancora da fare, che accende cio'
+    che si puo' esporre - e che puo' cadere fra giorni, non stasera; e la
+    scadenza di OGNI SINGOLA frazione, non solo l'ultima, perche' in una sera
+    con finestre diverse ognuna sparisce dall'elenco per conto suo.
     Si prende la piu' vicina.
 
     Le scadenze delle singole frazioni comprendono gia' quella del giorno, che

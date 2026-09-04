@@ -67,11 +67,17 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
         # cambiassero, il calendario tornerebbe vuoto senza dire niente: qui si
         # tiene una risoluzione alternativa fatta per nome, valida per la sessione.
         self._id_riallineati: tuple[int, int, int] | None = None
-        # Il freno del riallineamento e' sul TEMPO e non sul numero di scarichi
-        # vuoti: contando i vuoti consecutivi, un backend che alterna pieno e
-        # vuoto azzerava il contatore a ogni giro e pagava un riallineamento a
-        # ogni singolo vuoto isolato.
+        # Il freno del riallineamento e' un istante, e si scarica quando il
+        # calendario torna. E' uno scambio deliberato, misurato: con un backend
+        # che alterna pieno e vuoto si paga un tentativo per ogni vuoto isolato,
+        # cioe' circa 200 KB al giorno invece che a settimana. Non azzerarlo
+        # costerebbe fino a sei giorni e mezzo di silenzio se il gestore
+        # rinumerasse subito dopo un vuoto passeggero, e sei giorni di entita'
+        # mute valgono piu' di qualche centinaio di kilobyte.
         self._ultimo_riallineamento: datetime | None = None
+        # Alzato quando la voce si scarica: uno scarico ancora in volo non deve
+        # riarmare un risveglio dopo che tutto e' stato smontato.
+        self._chiuso = False
         self._gia_avvisato = False
 
         self._disdici_risveglio: CALLBACK_TYPE | None = None
@@ -140,7 +146,20 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
 
     async def _async_setup(self) -> None:
         """Fa in modo che il risveglio programmato non sopravviva alla voce."""
-        self.config_entry.async_on_unload(self._annulla_risveglio)
+        self.config_entry.async_on_unload(self._alla_chiusura)
+
+    @callback
+    def _alla_chiusura(self) -> None:
+        """Chiude la porta ai risvegli, anche a quelli ancora da armare.
+
+        Non basta disdire quello in sospeso: `_async_update_data` riarma il
+        risveglio alla sua ultima riga, e se la voce viene scaricata mentre una
+        richiesta al gestore e' ancora in volo, quella riga gira DOPO. Il timer
+        che ne nasce e' orfano, e si riprogramma da solo a ogni confine per
+        sempre: un ciclo di carica e scarica ne lasciava indietro uno.
+        """
+        self._chiuso = True
+        self._annulla_risveglio()
 
     @callback
     def _annulla_risveglio(self) -> None:
@@ -152,6 +171,8 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
     @callback
     def _programma_risveglio(self, calendario: Calendario | None) -> None:
         """Programma il ricalcolo al prossimo confine di giornata."""
+        if self._chiuso:
+            return
         self._annulla_risveglio()
         adesso = dt_util.now()
         # Un confine gia' passato - orologio riportato indietro, o un dato
@@ -206,11 +227,10 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
             raise UpdateFailed(str(errore)) from errore
 
         if calendario.giorni:
-            # Il freno si scarica quando il calendario torna. Senza, un vuoto
-            # isolato - un backend che sfarfalla - armava un'attesa di sette
-            # giorni, e se il gestore rinumerava davvero il giorno dopo nessuno
-            # provava piu' a ritrovare l'indirizzo: sei giorni di silenzio per
-            # risparmiare una richiesta ogni dodici ore.
+            # Vedi il commento sul freno in __init__: si sceglie di pagare
+            # qualche richiesta in piu' con un backend che sfarfalla, piuttosto
+            # che restare muti per giorni se il gestore rinumera subito dopo un
+            # vuoto passeggero.
             self._ultimo_riallineamento = None
         else:
             calendario = await self._forse_riallinea(calendario)

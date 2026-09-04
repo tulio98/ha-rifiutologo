@@ -31,10 +31,15 @@ MAX_GIORNI_DA_MOSTRARE: Final = 365
 # l'ordine di grandezza giusto per il polling, non i minuti.
 UPDATE_INTERVAL_HOURS: Final = 12
 
-# Ogni quanti scarichi VUOTI si riprova a ritrovare l'indirizzo per nome. Con un
-# aggiornamento ogni 12 ore fa circa una volta a settimana: abbastanza raro da
-# non pesare (l'elenco delle vie di Padova sono 191 KB), abbastanza spesso da
-# accorgersi entro pochi giorni se il gestore rinumera il database.
+# Quanti intervalli di aggiornamento devono passare fra due tentativi di
+# ritrovare l'indirizzo per nome, finche' il calendario resta vuoto. Con un
+# aggiornamento ogni 12 ore fa una volta a settimana: abbastanza raro da non
+# pesare su un indirizzo che il porta a porta non ce l'ha e non l'avra' mai
+# (l'elenco delle vie di Padova sono 191 KB), abbastanza spesso da accorgersi
+# entro pochi giorni se il gestore rinumera il database.
+#
+# Il conto riparte da zero appena il calendario torna: vedi il commento nel
+# coordinator per il perche' di quello scambio.
 CADENZA_RIALLINEAMENTO: Final = 14
 
 ATTRIBUTION: Final = "Dati forniti da Il Rifiutologo - Gruppo Hera"

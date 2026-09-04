@@ -522,3 +522,55 @@ async def test_il_risveglio_e_sempre_nel_futuro(
     assert programmati[-1] > adesso, (
         f"programmato nel passato ({programmati[-1]} <= {adesso}): girerebbe a vuoto"
     )
+
+
+async def test_uno_scarico_in_volo_non_riarma_il_risveglio_dopo_lo_scaricamento(
+    hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
+) -> None:
+    """Scaricare la voce mentre una richiesta e' in volo non deve lasciare timer.
+
+    `_async_update_data` riarma il risveglio nella sua ultima riga. Se la voce
+    viene scaricata mentre la GET al gestore e' ancora appesa, quella riga gira
+    DOPO che tutto e' stato smontato: il timer che ne nasce e' orfano e si
+    riprogramma da solo a ogni confine, per sempre. Un ciclo carica/scarica ne
+    lasciava indietro uno.
+    """
+    freezer.move_to(SERA_DI_RACCOLTA)
+    await hass.config.async_set_time_zone("Europe/Rome")
+    voce.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    coordinator = voce.runtime_data
+    assert coordinator._disdici_risveglio is not None
+
+    # La voce si scarica.
+    assert await hass.config_entries.async_unload(voce.entry_id)
+    await hass.async_block_till_done()
+    assert coordinator._disdici_risveglio is None
+
+    # E adesso arriva la coda dello scarico che era in volo.
+    coordinator._programma_risveglio(coordinator.data)
+    assert coordinator._disdici_risveglio is None, (
+        "riarmato un risveglio su una voce gia' scaricata"
+    )
+
+
+async def test_dieci_cicli_non_lasciano_niente_appeso(
+    hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
+) -> None:
+    """Carica e scarica dieci volte: iscritti e risvegli devono tornare a zero."""
+    freezer.move_to(SERA_DI_RACCOLTA)
+    await hass.config.async_set_time_zone("Europe/Rome")
+    voce.add_to_hass(hass)
+
+    for giro in range(10):
+        assert await hass.config_entries.async_setup(voce.entry_id), giro
+        await hass.async_block_till_done()
+        coordinator = voce.runtime_data
+        assert coordinator._disdici_risveglio is not None, giro
+
+        assert await hass.config_entries.async_unload(voce.entry_id), giro
+        await hass.async_block_till_done()
+        assert coordinator._disdici_risveglio is None, giro
+        assert not coordinator._listeners, f"iscritti rimasti al giro {giro}"
