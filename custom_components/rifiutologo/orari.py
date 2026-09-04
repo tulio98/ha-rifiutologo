@@ -24,7 +24,7 @@ from datetime import date, datetime, time, timedelta
 
 from homeassistant.util import dt as dt_util
 
-from .api import MINUTI_IN_UN_GIORNO, Calendario, GiornoRaccolta
+from .api import MINUTI_IN_UN_GIORNO, Calendario, Conferimento, GiornoRaccolta
 
 
 def istante(giorno: date, minuti: int, *, fold: int = 0) -> datetime:
@@ -54,6 +54,29 @@ def istante(giorno: date, minuti: int, *, fold: int = 0) -> datetime:
     ).replace(fold=fold)
 
 
+def scadenza(giorno: GiornoRaccolta, conferimento: Conferimento) -> datetime:
+    """Quando QUELLA frazione smette di essere esponibile.
+
+    E' il metro unico: lo usano `solo_aperti` per togliere dall'elenco cio' che
+    e' scaduto, `chiusura` per sapere quando finisce la sera, e `prossimo_confine`
+    per sapere quando risvegliare le entita'. Tenerlo in un posto solo e' l'unico
+    modo perche' i tre non divergano - ed erano gia' divergiti una volta: la
+    frazione scadeva alle 23:00 e il risveglio era programmato a mezzanotte,
+    quindi per un'ora lo stato pubblicato diceva ancora di esporla.
+
+    Senza finestra dichiarata la scadenza e' la mezzanotte. Non si prova a
+    dedurla dal testo: "entro le 04:00" e' un termine che il gestore riferisce a
+    un momento che non sappiamo collocare, e sbagliarlo vorrebbe dire dire a
+    qualcuno di non esporre quando invece deve.
+    """
+    minuti = conferimento.fine_minuti_effettiva
+    return istante(
+        giorno.giorno,
+        minuti if minuti is not None else MINUTI_IN_UN_GIORNO,
+        fold=1,
+    )
+
+
 def apertura(giorno: GiornoRaccolta) -> datetime:
     """Quando si apre l'esposizione di quella sera.
 
@@ -67,10 +90,12 @@ def apertura(giorno: GiornoRaccolta) -> datetime:
 def chiusura(giorno: GiornoRaccolta) -> datetime:
     """Quando quella sera finisce davvero.
 
-    E' la fine dell'ultima finestra dichiarata, che puo' cadere il giorno dopo.
-    Senza finestre dichiarate e' la mezzanotte.
+    E' la piu' tarda fra le scadenze delle sue frazioni, che puo' cadere il
+    giorno dopo. Senza finestre dichiarate e' la mezzanotte.
     """
-    return istante(giorno.giorno, giorno.chiusura_minuti, fold=1)
+    if not giorno.conferimenti:
+        return istante(giorno.giorno, MINUTI_IN_UN_GIORNO, fold=1)
+    return max(scadenza(giorno, c) for c in giorno.conferimenti)
 
 
 def solo_aperti(
@@ -88,18 +113,7 @@ def solo_aperti(
     """
     if giorno is None:
         return None
-    aperti = tuple(
-        c
-        for c in giorno.conferimenti
-        if istante(
-            giorno.giorno,
-            c.fine_minuti_effettiva
-            if c.fine_minuti_effettiva is not None
-            else MINUTI_IN_UN_GIORNO,
-            fold=1,
-        )
-        > adesso
-    )
+    aperti = tuple(c for c in giorno.conferimenti if scadenza(giorno, c) > adesso)
     if not aperti:
         return None
     if len(aperti) == len(giorno.conferimenti):
@@ -155,16 +169,24 @@ def prossima_raccolta(
 def prossimo_confine(calendario: Calendario | None, adesso: datetime) -> datetime:
     """Il primo momento in cui le entita' vanno ricalcolate.
 
-    Tre cose spostano il significato delle entita' senza che arrivi un dato
+    Quattro cose spostano il significato delle entita' senza che arrivi un dato
     nuovo: la mezzanotte, che cambia la data di oggi e quindi la prossima
-    raccolta; la chiusura della finestra in corso, che passa il testimone; e
-    l'apertura della prossima, che accende cio' che si puo' esporre. Si prende
-    la piu' vicina delle tre.
+    raccolta; l'apertura della sera in corso, che accende cio' che si puo'
+    esporre; e la scadenza di OGNI SINGOLA frazione, non solo l'ultima - perche'
+    in una sera con finestre diverse ognuna sparisce dall'elenco per conto suo.
+    Si prende la piu' vicina.
+
+    Le scadenze delle singole frazioni comprendono gia' quella del giorno, che
+    e' la piu' tarda fra loro: non serve aggiungerla a parte.
     """
     confini = [dt_util.start_of_local_day(adesso) + timedelta(days=1)]
 
     if (giorno := giorno_in_corso(calendario, adesso)) is not None:
-        confini.append(chiusura(giorno))
+        confini.extend(
+            momento
+            for c in giorno.conferimenti
+            if (momento := scadenza(giorno, c)) > adesso
+        )
         inizio = apertura(giorno)
         if inizio > adesso:
             confini.append(inizio)

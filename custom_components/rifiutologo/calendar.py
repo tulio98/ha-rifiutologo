@@ -8,7 +8,6 @@ gestore pubblica in `pittogramma.colore`.
 from __future__ import annotations
 
 import datetime as dt
-import re
 
 from homeassistant.components.calendar import (
     DOMAIN as DOMINIO_CALENDARIO,
@@ -21,7 +20,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .api import Calendario, Conferimento
+from .api import Calendario, Conferimento, slug
 from .const import (
     CONF_CALENDARI_PER_FRAZIONE,
     CONF_EVENTI_CON_ORARIO,
@@ -67,7 +66,9 @@ async def async_setup_entry(
                     coordinator,
                     frazione,
                     colori[frazione],
-                    _chiave_libera(chiavi.get(frazione, frazione), chiavi_usate),
+                    _chiave_libera(
+                        chiavi.get(frazione) or slug(frazione), chiavi_usate
+                    ),
                 )
             )
         return nuove
@@ -313,8 +314,3 @@ def _descrizione(conferimento: Conferimento) -> str | None:
     if conferimento.note:
         pezzi.append(conferimento.note)
     return " ".join(pezzi) or None
-
-
-def _chiave(frazione: str) -> str:
-    """Rende un nome di frazione utilizzabile come parte di unique_id."""
-    return re.sub(r"[^a-z0-9]+", "_", frazione.casefold()).strip("_") or "frazione"

@@ -22,6 +22,7 @@ from custom_components.rifiutologo.orari import (
     istante,
     prossima_raccolta,
     prossimo_confine,
+    scadenza,
     solo_aperti,
 )
 from homeassistant.core import HomeAssistant
@@ -371,7 +372,12 @@ async def test_il_confine_tiene_conto_anche_dell_apertura() -> None:
     [
         ("dalle 20:00", 20 * 60),
         ("Dalle 20:00 in poi", 20 * 60),
+        ("  dalle 20:00", 20 * 60),
         ("entro le 04:00", None),
+        # Il controllo e' sul PREFISSO, non sulla presenza della parola: un
+        # termine che nomina un'apertura resta un termine.
+        ("entro le 04:00, dalle 20:00 del giorno prima", None),
+        ("consegna dalle 20:00", None),
         ("", None),
         (None, None),
     ],
@@ -385,7 +391,7 @@ def test_dalle_e_unapertura_entro_e_un_termine(
     "entro le HH:MM" (un termine). Trattarli tutti come termini faceva dire al
     sensore mezzanotte invece delle 20:00.
     """
-    ora = "20:00" if (orario or "").strip().casefold().startswith("dalle") else "04:00"
+    ora = "20:00" if atteso is not None else "04:00"
     conferimento = api.Conferimento(
         frazione="x",
         macroprodotto_id=1,
@@ -462,3 +468,39 @@ async def test_solo_aperti_a_gradara() -> None:
     assert solo_aperti(sera, istante(sera.giorno, 31 * 60)) is None, (
         "dopo le 06:00 non c'e' piu' niente da esporre"
     )
+
+
+async def test_il_confine_conosce_ogni_singola_scadenza() -> None:
+    """Il risveglio deve cadere quando scade UNA frazione, non solo l'ultima.
+
+    A Gradara l'Indifferenziato chiude alle 23:00 e l'Organico alle 06:00 del
+    giorno dopo. Prima, il confine piu' vicino era la mezzanotte: per un'ora lo
+    stato pubblicato continuava a dire di esporre una frazione gia' scaduta.
+    """
+    calendario = _calendario("calendario_gradara")
+    sera = next(
+        g
+        for g in calendario.giorni
+        if len({c.fine_minuti_effettiva for c in g.conferimenti}) > 1
+    )
+    alle_22 = istante(sera.giorno, 22 * 60)
+    confine = prossimo_confine(calendario, alle_22)
+    assert confine == istante(sera.giorno, 23 * 60, fold=1), (
+        f"il confine e' {confine}, ma alle 23:00 scade una frazione"
+    )
+    # E il confine successivo e' la mezzanotte, che cambia la data di oggi.
+    dopo = prossimo_confine(calendario, istante(sera.giorno, 23 * 60 + 1))
+    assert dopo == istante(sera.giorno, 24 * 60)
+
+
+async def test_scadenza_e_chiusura_usano_lo_stesso_metro() -> None:
+    """La chiusura del giorno e' la piu' tarda fra le scadenze delle sue frazioni.
+
+    Se le due si calcolassero in due posti diversi tornerebbero a divergere, ed
+    e' esattamente cosi' che la frazione scaduta restava esposta.
+    """
+    for nome in ("calendario", "calendario_gradara", "calendario_faenza"):
+        calendario = _calendario(nome)
+        for giorno in calendario.giorni:
+            attesa = max(scadenza(giorno, c) for c in giorno.conferimenti)
+            assert chiusura(giorno) == attesa, nome

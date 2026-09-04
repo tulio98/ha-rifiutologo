@@ -205,7 +205,14 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
         except RifiutologoError as errore:
             raise UpdateFailed(str(errore)) from errore
 
-        if not calendario.giorni:
+        if calendario.giorni:
+            # Il freno si scarica quando il calendario torna. Senza, un vuoto
+            # isolato - un backend che sfarfalla - armava un'attesa di sette
+            # giorni, e se il gestore rinumerava davvero il giorno dopo nessuno
+            # provava piu' a ritrovare l'indirizzo: sei giorni di silenzio per
+            # risparmiare una richiesta ogni dodici ore.
+            self._ultimo_riallineamento = None
+        else:
             calendario = await self._forse_riallinea(calendario)
 
         self._programma_risveglio(calendario)
@@ -234,6 +241,7 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
         confermata = False
         try:
             if not await self._riallinea():
+                self._avvisa_se_muto()
                 return vuoto
             nuovo = await self._scarica()
             if not nuovo.giorni:
@@ -243,6 +251,7 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
                     "vuoto lo stesso",
                     self._etichetta,
                 )
+                self._avvisa_se_muto()
                 return vuoto
             confermata = True
         except RifiutologoError as errore:
@@ -252,12 +261,13 @@ class RifiutologoCoordinator(DataUpdateCoordinator[Calendario]):
             _LOGGER.debug("%s: riallineamento interrotto: %s", self._etichetta, errore)
             return vuoto
         finally:
+            # Qui si ripristina soltanto: una terna mai confermata non deve
+            # restare in uso, e vale per QUALUNQUE uscita, comprese le eccezioni
+            # fuori dalla gerarchia del client. L'avviso all'utente no: quello si
+            # da' dove si sa che il calendario e' davvero vuoto, non quando a
+            # fallire e' stata la rete di sicurezza.
             if not confermata:
-                # Vale per QUALUNQUE uscita non riuscita, comprese le eccezioni
-                # fuori dalla gerarchia del client: una terna mai confermata non
-                # deve restare in uso per il resto della sessione.
                 self._id_riallineati = precedenti
-                self._avvisa_se_muto()
 
         # L'avviso si da' QUI, non appena si trova una terna diversa: prima di
         # questo punto nessuno l'aveva ancora provata.

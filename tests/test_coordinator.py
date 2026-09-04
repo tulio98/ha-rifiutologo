@@ -343,14 +343,26 @@ async def test_il_freno_del_riallineamento_e_sul_tempo(
     primo = coordinator._ultimo_riallineamento
     assert primo is not None
 
-    # Il calendario torna: il marcatore NON si azzera, o un backend che
-    # sfarfalla pagherebbe un riallineamento a ogni vuoto isolato.
+    # Il calendario torna: il freno si scarica. Tenerlo armato avrebbe fatto
+    # risparmiare una richiesta ogni dodici ore al prezzo di sei giorni di
+    # silenzio, se il gestore rinumerava subito dopo un vuoto isolato.
     aioclient_mock.clear_requests()
     registra(aioclient_mock)
     freezer.tick(timedelta(hours=UPDATE_INTERVAL_HOURS + 1))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
-    assert coordinator._ultimo_riallineamento == primo
+    assert coordinator._ultimo_riallineamento is None
+
+    # E il vuoto successivo tenta subito, senza aspettare l'intervallo.
+    aioclient_mock.clear_requests()
+    registra(aioclient_mock, calendario="calendario_vuoto", allegati="allegati_vuoti")
+    freezer.tick(timedelta(hours=UPDATE_INTERVAL_HOURS + 1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    tentativi = sum(
+        1 for c in aioclient_mock.mock_calls if "getComuni.php" in str(c[1])
+    )
+    assert tentativi == 1, "dopo un recupero la rete di sicurezza torna immediata"
 
 
 async def test_il_log_non_contiene_gli_identificativi(
@@ -456,6 +468,12 @@ async def test_si_chiede_il_calendario_a_partire_da_ieri(
     chiesto = richieste[-1][1]["date"]
     assert chiesto.startswith("2026-09-02"), (
         f"chiesto da {chiesto}, ma deve partire da ieri"
+    )
+    # E si chiede un giorno in PIU', o partendo da ieri l'orizzonte in avanti si
+    # accorcerebbe di uno rispetto a quello che l'utente ha configurato.
+    coordinator = voce.runtime_data
+    assert int(richieste[-1][1]["giorniDaMostrare"]) == (
+        coordinator.giorni_da_mostrare + 1
     )
 
 

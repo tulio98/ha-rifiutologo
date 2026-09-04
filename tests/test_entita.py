@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import date, datetime
 import json
 from zoneinfo import ZoneInfo
@@ -592,3 +593,174 @@ async def test_gradara_smette_di_elencare_la_frazione_scaduta(
     assert set(binario.attributes["orari_esposizione"]) == rimaste
     testo = _stato(hass, voce, "sensor", "esposizione_stasera").state
     assert set(testo.split(", ")) == rimaste
+
+
+async def test_la_frazione_scaduta_sparisce_all_ora_giusta(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Non basta che il calcolo sia giusto: qualcuno deve ricalcolare a quell'ora.
+
+    A Gradara l'Indifferenziato chiude alle 23:00. Il risveglio era programmato
+    a mezzanotte, quindi fra le 23:00 e le 00:00 lo stato PUBBLICATO diceva
+    ancora di esporlo, contraddicendo il proprio attributo orari_esposizione.
+    """
+    registra(
+        aioclient_mock, calendario="calendario_gradara", allegati="allegati_gradara"
+    )
+    freezer.move_to(datetime(2026, 9, 8, 22, 0, tzinfo=ROMA))
+    await _avvia(hass, voce)
+
+    binario = _stato(hass, voce, "binary_sensor", "esporre_stasera")
+    assert set(binario.attributes["frazioni"]) == {"Indifferenziato", "Organico"}
+
+    # Le 23:30: la mezzanotte non e' ancora arrivata, ma una frazione e' scaduta.
+    alle_23_30 = datetime(2026, 9, 8, 23, 30, tzinfo=ROMA)
+    freezer.move_to(alle_23_30)
+    async_fire_time_changed(hass, alle_23_30)
+    await hass.async_block_till_done()
+
+    binario = _stato(hass, voce, "binary_sensor", "esporre_stasera")
+    assert binario.attributes["frazioni"] == ["Organico"], (
+        "lo stato pubblicato non e' stato ricalcolato alla scadenza delle 23:00"
+    )
+    assert _stato(hass, voce, "sensor", "esposizione_stasera").state == "Organico"
+
+
+async def test_le_chiavi_non_dipendono_dall_ordine_dell_api(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Due frazioni che collidono non devono scambiarsi identita' fra due avvii.
+
+    Quando il gestore non dichiara l'id del macroprodotto la chiave ripiega
+    sullo slug del nome, e due nomi che differiscono solo nella punteggiatura
+    danno lo stesso slug. Il discriminante che li separa deve dipendere dal
+    NOME e non dall'ordine in cui l'API li elenca: altrimenti al riavvio
+    successivo la stessa entita' - con il nome che l'utente le ha dato e le
+    automazioni che la citano - si ritrova gli eventi dell'altra frazione.
+    """
+
+    def payload(invertito: bool) -> dict:
+        grezzo = carica("calendario")
+        giorno = grezzo["calendario"][0]
+        base = json.loads(json.dumps(giorno["conferimenti"][0]))
+        gemelli = []
+        for nome in ("Pannolini/Pannoloni", "Pannolini - Pannoloni"):
+            copia = json.loads(json.dumps(base))
+            # Senza id, la chiave ripiega sullo slug: i due collidono.
+            copia["macroprodotto"] = {
+                "id": None,
+                "descrizione": nome,
+                "pittogramma": {"nomeFile": "x", "colore": "701100"},
+            }
+            gemelli.append(copia)
+        if invertito:
+            gemelli.reverse()
+        giorno["conferimenti"] = gemelli
+        return grezzo
+
+    def registra_con(grezzo: dict) -> None:
+        aioclient_mock.clear_requests()
+        aioclient_mock.get(f"{BASE_URL}/getComuni.php", json=carica("comuni"))
+        aioclient_mock.get(f"{BASE_URL}/getIndirizzi.php", json=carica("indirizzi"))
+        aioclient_mock.get(f"{BASE_URL}/getNumeriCivici.php", json=carica("civici"))
+        aioclient_mock.get(f"{BASE_URL}/getCalendarioPap.php", json=grezzo)
+        aioclient_mock.get(f"{BASE_URL}/getAllegatiPap.php", json=carica("allegati"))
+
+    registra_con(payload(invertito=False))
+    freezer.move_to(SERA_DI_RACCOLTA)
+    voce.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        voce, options={CONF_CALENDARI_PER_FRAZIONE: True}
+    )
+    await hass.config.async_set_time_zone("Europe/Rome")
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    registro = er.async_get(hass)
+
+    def mappa() -> dict[str, str]:
+        """unique_id -> nome della frazione servita da quell'entita'."""
+        fuori: dict[str, str] = {}
+        for e in er.async_entries_for_config_entry(registro, voce.entry_id):
+            if e.domain != "calendar" or not e.unique_id.startswith(
+                f"{voce.entry_id}_calendario_"
+            ):
+                continue
+            stato = hass.states.get(e.entity_id)
+            nome = stato.attributes["message"]
+            # Solo le due gemelle: le altre frazioni della fixture non c'entrano.
+            if "Pannol" in nome:
+                fuori[e.unique_id] = nome
+        return fuori
+
+    prima = mappa()
+    assert len(prima) == 2, f"una delle due frazioni e' sparita: {prima}"
+    assert set(prima.values()) == {"Pannolini/Pannoloni", "Pannolini - Pannoloni"}
+
+    # Stesso insieme, ordine invertito dall'API: le identita' devono reggere.
+    registra_con(payload(invertito=True))
+    await hass.config_entries.async_reload(voce.entry_id)
+    await hass.async_block_till_done()
+
+    assert mappa() == prima, "le due entita' si sono scambiate identita'"
+
+
+async def test_niente_entita_orfane_mentre_la_voce_si_scarica(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Un aggiornamento che arriva durante lo scaricamento non deve creare entita'.
+
+    Nei sorgenti di Home Assistant lo stato passa a UNLOAD_IN_PROGRESS PRIMA che
+    le piattaforme vengano smontate, e le callback di async_on_unload girano
+    dopo: in quella finestra un flag registrato li' arriverebbe sempre tardi, ed
+    e' per questo che la guardia guarda lo STATO della voce.
+    """
+    registra(aioclient_mock)
+    freezer.move_to(SERA_DI_RACCOLTA)
+    voce.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        voce, options={CONF_CALENDARI_PER_FRAZIONE: True}
+    )
+    await hass.config.async_set_time_zone("Europe/Rome")
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    registro = er.async_get(hass)
+
+    def quanti() -> int:
+        return len(
+            [
+                e
+                for e in er.async_entries_for_config_entry(registro, voce.entry_id)
+                if e.domain == "calendar"
+            ]
+        )
+
+    prima = quanti()
+    coordinator = voce.runtime_data
+
+    # Una frazione nuova arriva mentre la voce si sta smontando.
+    calendario = coordinator.data
+    giorno = calendario.giorni[0]
+    inedita = dataclasses.replace(
+        giorno.conferimenti[0], frazione="Sfalci e potature", macroprodotto_id=777
+    )
+    con_inedita = dataclasses.replace(
+        calendario,
+        giorni=(
+            dataclasses.replace(giorno, conferimenti=(*giorno.conferimenti, inedita)),
+            *calendario.giorni[1:],
+        ),
+    )
+
+    voce.mock_state(hass, ConfigEntryState.UNLOAD_IN_PROGRESS)
+    coordinator.async_set_updated_data(con_inedita)
+    await hass.async_block_till_done()
+
+    assert quanti() == prima, "creata un'entita' mentre la voce si scaricava"
+
+    # E a voce di nuovo carica la stessa frazione nasce, come deve.
+    voce.mock_state(hass, ConfigEntryState.LOADED)
+    coordinator.async_set_updated_data(con_inedita)
+    await hass.async_block_till_done()
+    assert quanti() == prima + 1

@@ -145,7 +145,7 @@ class Conferimento:
         """Identificatore stabile della frazione, per costruire gli UID."""
         if self.macroprodotto_id is not None:
             return str(self.macroprodotto_id)
-        return re.sub(r"[^a-z0-9]+", "_", self.frazione.casefold()).strip("_")
+        return slug(self.frazione)
 
     @property
     def fine_minuti_effettiva(self) -> int | None:
@@ -335,6 +335,15 @@ class Calendario:
     def prossimi(self, da: date) -> list[GiornoRaccolta]:
         """I giorni di raccolta da `da` compreso in poi, in ordine."""
         return [g for g in self.giorni if g.giorno >= da]
+
+
+def slug(testo: str) -> str:
+    """Riduce un nome a qualcosa di usabile dentro un unique_id.
+
+    Sta qui e non in calendar.py perche' lo usano entrambi: la chiave di
+    ripiego di un conferimento senza id e quella di un'entita' calendario.
+    """
+    return re.sub(r"[^a-z0-9]+", "_", testo.casefold()).strip("_") or "frazione"
 
 
 def _minuti(valore: str | None) -> int | None:
