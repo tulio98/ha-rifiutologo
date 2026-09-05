@@ -20,6 +20,16 @@ jobs:
   hacs:
     name: HACS
     runs-on: ubuntu-latest
+    # Su un repository PRIVATO questo job non puo' passare, e non per colpa del
+    # repository: hacs/action scarica i file da raw.githubusercontent.com SENZA
+    # autenticazione (repositories/base.py, get_hacs_json_raw), e li' un repo
+    # privato risponde 404. I due check che leggono il CONTENUTO dei file -
+    # hacsjson e integration_manifest - falliscono quindi con "invalid" quando in
+    # realta' il download e' tornato vuoto. Tutti gli altri sette, che passano
+    # dall'API autenticata, sono verdi. Verificato il 5 settembre 2026: 404 su
+    # hacs.json, manifest.json e README.md dal raw, e gli stessi file leggibili
+    # via API. Il job torna da solo appena il repository diventa pubblico.
+    if: ${{ !github.event.repository.private }}
     steps:
       - uses: actions/checkout@v5
       # Niente "ignore": la pagina di HACS sull'inclusione chiede che questa
