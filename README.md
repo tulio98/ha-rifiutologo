@@ -23,9 +23,10 @@ Il servizio **Il Rifiutologo** pubblica un dato che quasi nessuno usa per intero
 
 > La data del calendario **non è il giorno in cui passa il camion. È la sera in cui si espone.**
 
-A Padova il gestore dichiara *«dalle 20:00 alle 24:00»* per l'esposizione e *«dalle 05:00 del
-giorno successivo»* per la raccolta. Sono due cose diverse, e confonderle vuol dire mandarsi
-una notifica il giorno dopo, quando il sacco è già stato ritirato — o non ritirato.
+A Padova il gestore dichiara per esempio *«dalle 20:00 alle 24:00»* per l'esposizione e
+*«dalle 05:00 del giorno successivo»* per la raccolta. Sono due cose diverse, e confonderle
+vuol dire mandarsi una notifica il giorno dopo, quando il sacco è già stato ritirato — o non
+ritirato.
 
 Questa integrazione tiene quel dato, e ci costruisce sopra le entità.
 
@@ -100,6 +101,13 @@ Gli ultimi due casi hanno la stessa forma numerica e significato opposto: a dist
 **il testo che scrive il gestore**, non un'ipotesi. Censendo il backend, la forma
 `inizio = fine` compare 5.836 volte come «entro le» e 1.382 volte come «dalle».
 E quando il gestore non dichiara una durata, l'integrazione non se la fabbrica.
+
+🔴 **E l'orario cambia anche dentro lo stesso comune.** A Padova non c'è un orario «di
+Padova»: campionando gli indirizzi, il Quartiere 2 espone `19:00 → 24:00`, gli altri
+quartieri `20:00 → 24:00`, e in Quartiere 4 compare perfino un `entro le 24:00`, cioè la
+forma senza finestra. È il motivo per cui l'integrazione **chiede** l'orario indirizzo per
+indirizzo invece di ricavarlo dal comune: cablarlo sarebbe stato più semplice e sbagliato
+per un residente su cinque.
 
 Conseguenze pratiche, tutte e tre da tenere a mente:
 
