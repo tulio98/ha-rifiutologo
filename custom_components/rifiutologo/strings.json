@@ -52,11 +52,13 @@
         "data": {
           "eventi_con_orario": "Events with a time window",
           "calendari_per_frazione": "One calendar per waste type",
+          "sensori_per_frazione": "One sensor per waste type",
           "giorni_da_mostrare": "Days to look ahead"
         },
         "data_description": {
           "eventi_con_orario": "On: each event covers the put-out window the provider publishes, for example 8 PM to midnight. Off: plain all-day events.",
           "calendari_per_frazione": "Adds one calendar entity per waste type, each carrying the provider's official colour. Colours are shown by Home Assistant 2026.6 and later.",
+          "sensori_per_frazione": "Adds one sensor per waste type: its state is the date of that type's next put-out, and its attributes carry the days left, the official colour and the next dates.",
           "giorni_da_mostrare": "Glass can be up to 35 days apart, so a short horizon may hide it."
         }
       }
@@ -66,6 +68,9 @@
     "binary_sensor": {
       "esporre_stasera": {
         "name": "Collection tonight"
+      },
+      "finestra_aperta": {
+        "name": "Put-out window open"
       }
     },
     "calendar": {

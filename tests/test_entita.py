@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 from datetime import date, datetime
 import json
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -18,10 +19,11 @@ from custom_components.rifiutologo.const import (
     CONF_CALENDARI_PER_FRAZIONE,
     CONF_EVENTI_CON_ORARIO,
     CONF_GIORNI_DA_MOSTRARE,
+    CONF_SENSORI_PER_FRAZIONE,
     DOMAIN,
 )
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE
+from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
@@ -904,3 +906,384 @@ async def test_la_settimana_senza_raccolte_dice_zero(
     assert settimana.state == "0"
     assert settimana.attributes["giorni"] == []
     assert settimana.attributes["frazioni"] == []
+
+
+# --- un sensore per ogni frazione --------------------------------------------
+
+
+async def _avvia_con_sensori(
+    hass: HomeAssistant, voce: MockConfigEntry, quando: datetime
+) -> None:
+    """Avvia la voce con l'opzione dei sensori per frazione accesa."""
+    voce.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        voce, options={CONF_SENSORI_PER_FRAZIONE: True}
+    )
+    await hass.config.async_set_time_zone("Europe/Rome")
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+
+def _sensori_frazione(hass: HomeAssistant, voce: MockConfigEntry) -> list[str]:
+    """Gli unique_id dei soli sensori per frazione."""
+    registro = er.async_get(hass)
+    return sorted(
+        e.unique_id
+        for e in er.async_entries_for_config_entry(registro, voce.entry_id)
+        if e.domain == "sensor" and e.unique_id.startswith(f"{voce.entry_id}_frazione_")
+    )
+
+
+async def test_i_sensori_per_frazione_sono_spenti_di_serie(
+    hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
+) -> None:
+    """Sei entita' in piu' non devono comparire a chi non le ha chieste."""
+    freezer.move_to(SERA_DI_RACCOLTA)
+    await _avvia(hass, voce)
+    assert _sensori_frazione(hass, voce) == []
+    # Ma i sensori fissi ci sono tutti.
+    assert _stato(hass, voce, "sensor", "esposizione_stasera") is not None
+
+
+async def test_un_sensore_per_ogni_frazione(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Sei frazioni a Padova, sei sensori, ciascuno con la SUA prossima data."""
+    registra(aioclient_mock)
+    freezer.move_to(SERA_DI_RACCOLTA)
+    await _avvia_con_sensori(hass, voce, SERA_DI_RACCOLTA)
+
+    assert len(_sensori_frazione(hass, voce)) == 6
+    chiavi = coordinator_chiavi(hass, voce)
+
+    carta = _stato(hass, voce, "sensor", f"frazione_{chiavi['Carta']}")
+    assert carta.state == "2026-09-09", "la carta passa il 9, non il 3"
+    assert carta.attributes["frazione"] == "Carta"
+    assert carta.attributes["colore"] == "#0093D0"
+    assert carta.attributes["giorni_mancanti"] == 6
+    assert carta.attributes["giorno_settimana"] == 3
+    assert carta.attributes["inizio_esposizione"] == "2026-09-09T20:00:00+02:00"
+    assert carta.attributes["fine_esposizione"] == "2026-09-10T00:00:00+02:00"
+    assert carta.attributes["orario_esposizione"] == "dalle 20:00 alle 24:00"
+    assert carta.attributes["prossime"] == ["2026-09-09"]
+
+    organico = _stato(hass, voce, "sensor", f"frazione_{chiavi['Organico']}")
+    assert organico.state == "2026-09-03", "stasera"
+    assert organico.attributes["giorni_mancanti"] == 0
+    assert organico.attributes["prossime"] == [
+        "2026-09-03",
+        "2026-09-06",
+        "2026-09-08",
+        "2026-09-10",
+        "2026-09-13",
+    ], "cinque date e non di piu'"
+
+
+async def test_il_sensore_di_frazione_non_guarda_indietro(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Un sensore `date` che pubblica ieri e' un sensore che mente.
+
+    A Bologna alle due di notte la sera di ieri e' ancora esponibile - e infatti
+    "Raccolta stasera" e' acceso - ma la prossima DATA e' quella dopo.
+    """
+    registra(
+        aioclient_mock, calendario="calendario_bologna", allegati="allegati_bologna"
+    )
+    notte = datetime(2026, 9, 4, 2, 0, tzinfo=ROMA)
+    freezer.move_to(notte)
+    await _avvia_con_sensori(hass, voce, notte)
+
+    chiavi = coordinator_chiavi(hass, voce)
+    organico = _stato(hass, voce, "sensor", f"frazione_{chiavi['Organico']}")
+    assert organico.state == "2026-09-06"
+    assert _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_ON
+    assert (
+        _stato(hass, voce, "binary_sensor", "esporre_stasera").attributes["data"]
+        == "2026-09-03"
+    ), "le due entita' rispondono a due domande diverse"
+
+
+async def test_spegnere_i_sensori_per_frazione_li_toglie_dal_registro(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Senza la pulizia resterebbero per sempre "non disponibili".
+
+    E non deve portarsi via i sensori fissi, che stanno nella stessa
+    piattaforma e si distinguono solo dal prefisso dell'unique_id.
+    """
+    registra(aioclient_mock)
+    freezer.move_to(SERA_DI_RACCOLTA)
+    await _avvia_con_sensori(hass, voce, SERA_DI_RACCOLTA)
+    assert len(_sensori_frazione(hass, voce)) == 6
+
+    risultato = await hass.config_entries.options.async_init(voce.entry_id)
+    await hass.config_entries.options.async_configure(
+        risultato["flow_id"],
+        {
+            CONF_EVENTI_CON_ORARIO: True,
+            CONF_CALENDARI_PER_FRAZIONE: False,
+            CONF_SENSORI_PER_FRAZIONE: False,
+            CONF_GIORNI_DA_MOSTRARE: 365,
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert _sensori_frazione(hass, voce) == []
+
+    # Si guarda il REGISTRO e non gli stati: "Zona di raccolta" e' disattivata
+    # di serie, quindi e' registrata ma non ha stato, e cercarne uno direbbe
+    # "cancellata" di un'entita' che sta benissimo dov'e'.
+    registro = er.async_get(hass)
+    rimasti = {
+        e.unique_id
+        for e in er.async_entries_for_config_entry(registro, voce.entry_id)
+        if e.domain == "sensor"
+    }
+    for chiave in (
+        "esposizione_stasera",
+        "prossima_raccolta",
+        "prossima_esposizione",
+        "giorni_alla_prossima",
+        "settimana",
+        "zona",
+    ):
+        assert f"{voce.entry_id}_{chiave}" in rimasti, (
+            f"la pulizia si e' portata via {chiave}"
+        )
+
+
+# --- la finestra aperta, che non e' "stasera" --------------------------------
+
+
+async def test_i_due_binary_sensor_non_dicono_la_stessa_cosa(
+    hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
+) -> None:
+    """Alle 18:00 tocca stasera, ma il sacco fuori adesso e' fuori regolamento."""
+    freezer.move_to(SERA_DI_RACCOLTA)
+    await _avvia(hass, voce)
+
+    assert _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_ON
+    finestra = _stato(hass, voce, "binary_sensor", "finestra_aperta")
+    assert finestra.state == STATE_OFF, "l'esposizione comincia alle 20:00"
+    assert finestra.attributes["frazioni"] == []
+
+    # Alle 20:00 si apre, e allora dicono la stessa cosa.
+    apre = datetime(2026, 9, 3, 20, 0, tzinfo=ROMA)
+    freezer.move_to(apre)
+    async_fire_time_changed(hass, apre)
+    await hass.async_block_till_done()
+
+    finestra = _stato(hass, voce, "binary_sensor", "finestra_aperta")
+    assert finestra.state == STATE_ON
+    assert finestra.attributes["frazioni"] == ["Organico"]
+    assert _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_ON
+
+    # A mezzanotte si chiudono tutte e due.
+    chiude = datetime(2026, 9, 4, 0, 1, tzinfo=ROMA)
+    freezer.move_to(chiude)
+    async_fire_time_changed(hass, chiude)
+    await hass.async_block_till_done()
+
+    assert _stato(hass, voce, "binary_sensor", "finestra_aperta").state == STATE_OFF
+    assert _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_OFF
+
+
+async def test_la_finestra_si_apre_da_sola_senza_richiamare_il_gestore(
+    hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
+) -> None:
+    """Il risveglio all'apertura c'e' gia': va solo verificato che ci sia."""
+    prima = datetime(2026, 9, 3, 19, 59, tzinfo=ROMA)
+    freezer.move_to(prima)
+    await _avvia(hass, voce)
+    scarichi = sum(1 for c in gestore.mock_calls if "getCalendarioPap.php" in str(c[1]))
+    assert _stato(hass, voce, "binary_sensor", "finestra_aperta").state == STATE_OFF
+
+    apre = datetime(2026, 9, 3, 20, 0, tzinfo=ROMA)
+    freezer.move_to(apre)
+    async_fire_time_changed(hass, apre)
+    await hass.async_block_till_done()
+
+    assert _stato(hass, voce, "binary_sensor", "finestra_aperta").state == STATE_ON
+    dopo = sum(1 for c in gestore.mock_calls if "getCalendarioPap.php" in str(c[1]))
+    assert dopo == scarichi, "un confine di giornata non e' un dato nuovo"
+
+
+async def test_un_termine_apre_la_finestra_a_mezzanotte(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """A Faenza "entro le 04:00" non e' un'apertura: si puo' esporre tutto il giorno."""
+    registra(aioclient_mock, calendario="calendario_faenza", allegati="allegati_faenza")
+    mattina = datetime(2026, 9, 3, 9, 0, tzinfo=ROMA)
+    freezer.move_to(mattina)
+    await _avvia(hass, voce)
+
+    finestra = _stato(hass, voce, "binary_sensor", "finestra_aperta")
+    assert finestra.state == STATE_ON, "nessun'ora prima della quale sia vietato"
+    assert finestra.attributes["frazioni"] == ["Indifferenziato"]
+    assert finestra.attributes["orario_esposizione"] == "entro le 04:00"
+
+
+async def test_la_finestra_di_bologna_e_aperta_alle_due_di_notte(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Dove scavalca la mezzanotte, alle due si puo' ancora uscire davvero."""
+    registra(
+        aioclient_mock, calendario="calendario_bologna", allegati="allegati_bologna"
+    )
+    notte = datetime(2026, 9, 4, 2, 0, tzinfo=ROMA)
+    freezer.move_to(notte)
+    await _avvia(hass, voce)
+
+    finestra = _stato(hass, voce, "binary_sensor", "finestra_aperta")
+    assert finestra.state == STATE_ON
+    assert finestra.attributes["data"] == "2026-09-03", "e' la sera di ieri"
+
+    # Alle sette e' finita.
+    mattina = datetime(2026, 9, 4, 7, 0, tzinfo=ROMA)
+    freezer.move_to(mattina)
+    async_fire_time_changed(hass, mattina)
+    await hass.async_block_till_done()
+    assert _stato(hass, voce, "binary_sensor", "finestra_aperta").state == STATE_OFF
+
+
+async def test_frazione_fuori_orizzonte_non_inventa_una_data(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Se nell'orizzonte quella frazione non ricompare, lo stato e' sconosciuto.
+
+    Non e' un caso di laboratorio: a Padova fra due raccolte del vetro passano
+    fino a 35 giorni, e chi accorcia l'orizzonte a 30 si trova esattamente qui.
+    L'entita' resta - la frazione esiste, il gestore la nomina - ma la data no.
+    """
+    registra(aioclient_mock)
+    # Il 21 settembre, nelle fixture, la carta e' passata il 9 e non torna.
+    tardi = datetime(2026, 9, 21, 18, 0, tzinfo=ROMA)
+    freezer.move_to(tardi)
+    await _avvia_con_sensori(hass, voce, tardi)
+
+    chiavi = coordinator_chiavi(hass, voce)
+    carta = _stato(hass, voce, "sensor", f"frazione_{chiavi['Carta']}")
+    assert carta.state == STATE_UNKNOWN
+    assert carta.attributes["prossime"] == []
+    assert carta.attributes["giorni_mancanti"] is None
+    assert carta.attributes["inizio_esposizione"] is None
+    assert carta.attributes["straordinario"] is False
+    # Il nome e il colore restano: descrivono la frazione, non la data.
+    assert carta.attributes["frazione"] == "Carta"
+    assert carta.attributes["colore"] == "#0093D0"
+
+    # E l'organico, che invece torna, ha la sua data.
+    organico = _stato(hass, voce, "sensor", f"frazione_{chiavi['Organico']}")
+    assert organico.state == "2026-09-22"
+
+
+async def test_la_frazione_scaduta_oggi_non_e_la_prossima(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """A Modena si espone dalle 00:00 alle 07:00: a mezzogiorno oggi e' andato.
+
+    E' il caso in cui la data da sola non basta: il giorno e' ancora quello di
+    oggi, ma la finestra si e' chiusa cinque ore fa. Senza il controllo sulla
+    scadenza il sensore indicherebbe una sera gia' persa.
+    """
+    registra(aioclient_mock, calendario="calendario_modena", allegati="allegati_modena")
+    mezzogiorno = datetime(2026, 9, 4, 12, 0, tzinfo=ROMA)
+    freezer.move_to(mezzogiorno)
+    await _avvia_con_sensori(hass, voce, mezzogiorno)
+
+    chiavi = coordinator_chiavi(hass, voce)
+    organico = _stato(hass, voce, "sensor", f"frazione_{chiavi['Organico']}")
+    assert organico.state == "2026-09-07", (
+        "l'organico del 4 si esponeva entro le 07:00: a mezzogiorno e' passato"
+    )
+    assert organico.attributes["prossime"][0] == "2026-09-07"
+    # E prima delle sette invece e' ancora quella di oggi.
+    assert _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_OFF
+
+
+async def test_la_pulizia_tocca_solo_le_entita_per_frazione(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Si guarda CHE COSA rimuove, non che cosa resta alla fine.
+
+    Alla fine le due cose non si distinguono, e non per un difetto del test:
+    Home Assistant conserva le voci rimosse e ne restituisce nome, icona e area
+    appena lo stesso unique_id ricompare, quindi un sensore fisso cancellato e
+    subito ricreato torna identico. Verificato su questo codice, cancellando di
+    proposito tutti i sensori: il nome scelto a mano era ancora li'.
+
+    Quindi una pulizia che allarga il tiro non lascia tracce nello stato finale,
+    e l'unico modo di accorgersene e' guardarla mentre lavora. Il danno vero lo
+    farebbe su un'entita' che NON ricompare - una frazione stagionale fuori
+    stagione - e quella non c'e' modo di ricrearla per accorgersene dopo.
+    """
+    registra(aioclient_mock)
+    freezer.move_to(SERA_DI_RACCOLTA)
+    await _avvia_con_sensori(hass, voce, SERA_DI_RACCOLTA)
+
+    registro = er.async_get(hass)
+    attesi = {
+        e.entity_id
+        for e in er.async_entries_for_config_entry(registro, voce.entry_id)
+        if e.unique_id.startswith(f"{voce.entry_id}_frazione_")
+    }
+    assert len(attesi) == 6
+
+    rimossi: list[str] = []
+    originale = er.EntityRegistry.async_remove
+
+    def _sorveglia(self: er.EntityRegistry, entity_id: str) -> None:
+        rimossi.append(entity_id)
+        originale(self, entity_id)
+
+    with patch.object(er.EntityRegistry, "async_remove", _sorveglia):
+        risultato = await hass.config_entries.options.async_init(voce.entry_id)
+        await hass.config_entries.options.async_configure(
+            risultato["flow_id"],
+            {
+                CONF_EVENTI_CON_ORARIO: True,
+                CONF_CALENDARI_PER_FRAZIONE: False,
+                CONF_SENSORI_PER_FRAZIONE: False,
+                CONF_GIORNI_DA_MOSTRARE: 365,
+            },
+        )
+        await hass.async_block_till_done()
+
+    assert set(rimossi) == attesi, "la pulizia ha allargato il tiro"
+    assert _sensori_frazione(hass, voce) == []
+
+
+async def test_la_pulizia_resta_dentro_la_propria_piattaforma(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Il prefisso da solo non basta: i due domini possono sceglierlo uguale.
+
+    Oggi sensori e calendari usano prefissi diversi, quindi il controllo sul
+    dominio non ha occasione di servire. E' proprio per questo che va provato
+    qui: il giorno in cui una piattaforma nuova scegliesse lo stesso prefisso,
+    senza quel controllo si porterebbe via le entita' dell'altra e nessun test
+    se ne accorgerebbe.
+    """
+    registra(aioclient_mock)
+    freezer.move_to(SERA_DI_RACCOLTA)
+    voce.add_to_hass(hass)
+
+    # Un'entita' di un ALTRO dominio che condivide il prefisso dei sensori.
+    registro = er.async_get(hass)
+    intruso = registro.async_get_or_create(
+        "calendar",
+        DOMAIN,
+        f"{voce.entry_id}_frazione_finta",
+        config_entry=voce,
+        suggested_object_id="intruso",
+    )
+
+    # I sensori per frazione sono spenti: la pulizia gira.
+    await hass.config.async_set_time_zone("Europe/Rome")
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    assert registro.async_get(intruso.entity_id) is not None, (
+        "la pulizia dei sensori si e' portata via un calendario"
+    )

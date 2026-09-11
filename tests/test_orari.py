@@ -18,13 +18,16 @@ from custom_components.rifiutologo.calendar import costruisci_eventi
 from custom_components.rifiutologo.orari import (
     agenda,
     apertura,
+    apertura_conferimento,
     chiusura,
     giorno_in_corso,
+    in_finestra,
     istante,
     prossima_raccolta,
     prossimo_confine,
     scadenza,
     solo_aperti,
+    solo_in_finestra,
 )
 from homeassistant.core import HomeAssistant
 
@@ -678,3 +681,112 @@ async def test_agenda_di_un_anno_arriva_in_fondo() -> None:
     quando = datetime(2026, 9, 3, 18, 0, tzinfo=ROMA)
     giorni = agenda(calendario, quando, 365)
     assert len(giorni) == len(calendario.giorni), "nessuna sera e' andata persa"
+
+
+# --- la finestra: non solo "non ancora scaduto", ma "gia' cominciato" ---------
+
+
+def _sera(*orari: tuple[str | None, str | None, str | None]) -> api.GiornoRaccolta:
+    """Una sera costruita a mano: (oraInizio, oraFine, testo)."""
+    return api.GiornoRaccolta(
+        giorno=date(2026, 9, 3),
+        conferimenti=tuple(
+            api.Conferimento(
+                frazione=f"frazione {indice}",
+                macroprodotto_id=indice,
+                colore=None,
+                ora_inizio=inizio,
+                ora_fine=fine,
+                orario=testo,
+                orario_raccolta=None,
+                straordinario=False,
+                note=None,
+            )
+            for indice, (inizio, fine, testo) in enumerate(orari)
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("ora", "dentro", "perche"),
+    [
+        (18 * 60, False, "prima delle 20:00 il sacco fuori e' fuori regolamento"),
+        (19 * 60 + 59, False, "manca un minuto"),
+        (20 * 60, True, "l'apertura e' compresa"),
+        (23 * 60 + 59, True, "ancora dentro"),
+        (24 * 60, False, "a mezzanotte la finestra si e' chiusa"),
+    ],
+)
+async def test_in_finestra_padova(ora: int, dentro: bool, perche: str) -> None:
+    """Padova dichiara 20:00 -> 24:00: fuori da li' non si espone."""
+    sera = _sera(("20:00", "24:00", "dalle 20:00 alle 24:00"))
+    conferimento = sera.conferimenti[0]
+    assert in_finestra(sera, conferimento, istante(sera.giorno, ora)) is dentro, perche
+
+
+@pytest.mark.parametrize(
+    ("ora", "dentro"),
+    [(0, True), (3 * 60, True), (20 * 60, True), (24 * 60, False)],
+)
+async def test_in_finestra_con_un_termine(ora: int, dentro: bool) -> None:
+    """Un termine non e' un'apertura: non c'e' un'ora prima della quale e' vietato.
+
+    Se lo si prendesse per un'apertura, il sensore direbbe di aspettare le
+    quattro del mattino - cioe' esattamente il contrario di quello che il
+    gestore chiede.
+    """
+    sera = _sera(("04:00", "04:00", "entro le 04:00"))
+    conferimento = sera.conferimenti[0]
+    assert apertura_conferimento(sera, conferimento) == istante(sera.giorno, 0)
+    assert in_finestra(sera, conferimento, istante(sera.giorno, ora)) is dentro
+
+
+async def test_solo_in_finestra_taglia_da_tutte_e_due_le_parti() -> None:
+    """Fratello di `solo_aperti`, e la differenza si vede in una sera mista."""
+    sera = _sera(
+        ("20:00", "22:00", "dalle 20:00 alle 22:00"),
+        ("04:00", "04:00", "entro le 04:00"),
+    )
+    presto = istante(sera.giorno, 10 * 60)
+    # A mezzogiorno: chi ha un termine si puo' gia' esporre, chi ha una
+    # finestra no. `solo_aperti` invece li terrebbe tutti e due.
+    dentro = solo_in_finestra(sera, presto)
+    assert dentro is not None
+    assert dentro.frazioni == ["frazione 1"], "solo quella col termine"
+    assert solo_aperti(sera, presto) is sera, "per `solo_aperti` nessuno e' scaduto"
+
+    # Alle 21:00 ci sono entrambe.
+    assert solo_in_finestra(sera, istante(sera.giorno, 21 * 60)) is sera
+
+    # Alle 23:00 la prima e' scaduta e resta la seconda.
+    tardi = solo_in_finestra(sera, istante(sera.giorno, 23 * 60))
+    assert tardi is not None and tardi.frazioni == ["frazione 1"]
+
+    # Dopo mezzanotte non c'e' piu' niente.
+    assert solo_in_finestra(sera, istante(sera.giorno, 24 * 60 + 1)) is None
+    assert solo_in_finestra(None, presto) is None
+
+
+async def test_il_confine_conosce_ogni_singola_apertura() -> None:
+    """Il risveglio deve cadere anche quando si APRE una frazione, non solo la prima.
+
+    Nei cinque comuni censiti non esiste una sera con due aperture diverse:
+    questa e' la prova del meccanismo, non il rimedio a un caso vivo. Se il
+    confine si fermasse al minimo, la seconda frazione entrerebbe nella
+    finestra senza che nessuno riscrivesse lo stato.
+    """
+    sera = _sera(
+        ("19:00", "24:00", "dalle 19:00 alle 24:00"),
+        ("21:00", "24:00", "dalle 21:00 alle 24:00"),
+    )
+    calendario = api.Calendario(nota="", giorni=(sera,), allegati=())
+
+    assert prossimo_confine(calendario, istante(sera.giorno, 18 * 60)) == istante(
+        sera.giorno, 19 * 60
+    ), "prima di tutto si apre la prima"
+    assert prossimo_confine(calendario, istante(sera.giorno, 20 * 60)) == istante(
+        sera.giorno, 21 * 60
+    ), "poi la seconda: e' il confine che prima si perdeva"
+    assert prossimo_confine(calendario, istante(sera.giorno, 22 * 60)) == istante(
+        sera.giorno, 24 * 60
+    ), "e infine la chiusura, che coincide con la mezzanotte"

@@ -52,11 +52,13 @@
         "data": {
           "eventi_con_orario": "Eventi con la finestra oraria",
           "calendari_per_frazione": "Un calendario per ogni frazione",
+          "sensori_per_frazione": "Un sensore per ogni frazione",
           "giorni_da_mostrare": "Giorni da guardare in avanti"
         },
         "data_description": {
           "eventi_con_orario": "Acceso: ogni evento copre la finestra di esposizione dichiarata dal gestore, per esempio dalle 20:00 alle 24:00. Spento: eventi giornalieri.",
           "calendari_per_frazione": "Aggiunge un'entita' calendario per ogni frazione, ciascuna col colore ufficiale del gestore. I colori li mostra Home Assistant dalla 2026.6 in poi.",
+          "sensori_per_frazione": "Aggiunge un sensore per ogni tipo di rifiuto: lo stato e' la data della sua prossima esposizione, e negli attributi ci sono i giorni mancanti, il colore ufficiale e le prossime date.",
           "giorni_da_mostrare": "Fra due raccolte del vetro possono passare 35 giorni: un orizzonte corto rischia di nasconderlo."
         }
       }
@@ -66,6 +68,9 @@
     "binary_sensor": {
       "esporre_stasera": {
         "name": "Raccolta stasera"
+      },
+      "finestra_aperta": {
+        "name": "Finestra di esposizione aperta"
       }
     },
     "calendar": {

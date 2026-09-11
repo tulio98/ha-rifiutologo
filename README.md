@@ -38,6 +38,7 @@ Per ogni indirizzo configurato nasce un dispositivo con queste entità:
 |---|---|---|
 | **Raccolta** (`calendar`) | Calendario di tutte le frazioni | Il pannello Calendario, la card, e i trigger `calendar` |
 | **Raccolta stasera** (`binary_sensor`) | Acceso finché c'è tempo per esporre | Il mattone delle automazioni |
+| **Finestra di esposizione aperta** (`binary_sensor`) | Acceso **solo dentro** l'orario dichiarato dal gestore | Far partire l'avviso nel momento esatto |
 | **Da esporre stasera** (`sensor`) | `Organico, Carta` oppure `nessuna` | Il testo della notifica |
 | **Prossima raccolta** (`sensor`) | Data della prossima raccolta, da oggi in avanti | Card e template |
 | **Prossima esposizione** (`sensor`) | Istante in cui si apre la sua finestra | `device_class: timestamp`, si legge come «fra 3 ore» |
@@ -109,6 +110,46 @@ inventato: arriva dal campo `pittogramma.colore` dell'API.
 Lattine e plastica hanno lo stesso colore perché il gestore le fa esporre insieme.
 I colori li disegna Home Assistant **dalla 2026.6** in poi; sulle versioni precedenti i
 calendari separati funzionano lo stesso, semplicemente senza tinta.
+
+### Un sensore per ogni frazione
+
+Attivando **«Un sensore per ogni frazione»** nasce un sensore per tipo di rifiuto — a
+Padova sei: *Organico*, *Indifferenziato*, *Carta*, *Lattine*, *Imballaggi in plastica*,
+*Imballaggi in vetro*. Risponde alla domanda che il calendario complessivo non risponde:
+**e il vetro quando passa?**
+
+Lo stato è la data della prossima esposizione di quella frazione (`device_class: date`).
+Negli attributi:
+
+| Attributo | Contenuto |
+|---|---|
+| `frazione` | il nome, come lo scrive il gestore |
+| `colore` | il colore ufficiale di quella frazione |
+| `giorni_mancanti` | `0` vuol dire stasera |
+| `giorno_settimana` | `1` è lunedì, `7` è domenica |
+| `inizio_esposizione` / `fine_esposizione` | la finestra **di quella frazione**, che nella stessa sera può differire dalle altre |
+| `orario_esposizione` / `orario_raccolta` | le frasi del gestore |
+| `nota` / `straordinario` | quello che il gestore segnala su quel conferimento |
+| `prossime` | le prossime cinque date, per vedere il passo a colpo d'occhio |
+
+Come *Prossima raccolta*, **non guarda mai indietro**: un sensore `date` che pubblica ieri
+è un sensore che mente. Per sapere se stanotte si è ancora in tempo c'è *Raccolta stasera*.
+
+## I due binary sensor non dicono la stessa cosa
+
+È la distinzione che serve di più e che si nota di meno.
+
+| | Si accende | Si spegne | Risponde a |
+|---|---|---|---|
+| **Raccolta stasera** | a mezzanotte del giorno di raccolta | quando l'ultima finestra si chiude | «oggi tocca, e sono ancora in tempo?» |
+| **Finestra di esposizione aperta** | all'ora dichiarata dal gestore (19:00, 20:00…) | alla stessa ora dell'altro | «posso uscire **adesso**?» |
+
+Alle sei di sera del giorno della carta il primo dice sì e il secondo dice no — ed è la
+risposta giusta: il sacco fuori a quell'ora è fuori regolamento.
+
+Dove il gestore **non** dichiara un'apertura — «entro le 04:00» è un termine, non un
+inizio — la finestra vale da mezzanotte, perché in quel caso non c'è nessun'ora prima
+della quale sia vietato esporre.
 
 ## L'orario di esposizione, che cambia da comune a comune
 
@@ -224,6 +265,7 @@ E se traslochi, **Riconfigura** cambia indirizzo senza perdere la cronologia.
 |---|---|---|
 | Eventi con la finestra oraria | acceso | Gli eventi coprono la finestra di esposizione invece di essere giornalieri. Serve per far scattare i trigger `calendar` all'ora giusta. |
 | Un calendario per ogni frazione | spento | Aggiunge un'entità calendario per frazione, col colore ufficiale |
+| Un sensore per ogni frazione | spento | Aggiunge un sensore per frazione: la data della **sua** prossima esposizione |
 | Giorni da guardare in avanti | 365 | Fra due raccolte del **vetro** possono passare 35 giorni: con un orizzonte corto sparisce |
 
 ## Automazioni

@@ -49,11 +49,13 @@ from .const import (
     CONF_COMUNE_NOME,
     CONF_EVENTI_CON_ORARIO,
     CONF_GIORNI_DA_MOSTRARE,
+    CONF_SENSORI_PER_FRAZIONE,
     CONF_VIA_ID,
     CONF_VIA_NOME,
     DEFAULT_CALENDARI_PER_FRAZIONE,
     DEFAULT_EVENTI_CON_ORARIO,
     DEFAULT_GIORNI_DA_MOSTRARE,
+    DEFAULT_SENSORI_PER_FRAZIONE,
     DOMAIN,
     MAX_GIORNI_DA_MOSTRARE,
     MIN_GIORNI_DA_MOSTRARE,
@@ -274,6 +276,7 @@ class RifiutologoOptionsFlow(OptionsFlowWithReload):
                     CONF_CALENDARI_PER_FRAZIONE: user_input[
                         CONF_CALENDARI_PER_FRAZIONE
                     ],
+                    CONF_SENSORI_PER_FRAZIONE: user_input[CONF_SENSORI_PER_FRAZIONE],
                     CONF_GIORNI_DA_MOSTRARE: int(user_input[CONF_GIORNI_DA_MOSTRARE]),
                 }
             )
@@ -294,6 +297,12 @@ class RifiutologoOptionsFlow(OptionsFlowWithReload):
                         default=attuali.get(
                             CONF_CALENDARI_PER_FRAZIONE,
                             DEFAULT_CALENDARI_PER_FRAZIONE,
+                        ),
+                    ): BooleanSelector(),
+                    vol.Required(
+                        CONF_SENSORI_PER_FRAZIONE,
+                        default=attuali.get(
+                            CONF_SENSORI_PER_FRAZIONE, DEFAULT_SENSORI_PER_FRAZIONE
                         ),
                     ): BooleanSelector(),
                     vol.Required(

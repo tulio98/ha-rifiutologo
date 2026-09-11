@@ -81,6 +81,61 @@ def scadenza(giorno: GiornoRaccolta, conferimento: Conferimento) -> datetime:
     )
 
 
+def apertura_conferimento(
+    giorno: GiornoRaccolta, conferimento: Conferimento
+) -> datetime:
+    """Quando QUELLA frazione comincia a potersi esporre.
+
+    E' la simmetrica di `scadenza`, e come quella sta in un posto solo perche'
+    la usano in tre: il binary sensor della finestra, il sensore della singola
+    frazione e `prossimo_confine` per sapere quando risvegliare le entita'.
+
+    Senza un'apertura dichiarata e' la mezzanotte del giorno. Non si prova a
+    dedurla: "entro le 04:00" e' un TERMINE, e prenderlo per un inizio direbbe
+    a chi legge di cominciare alle quattro del mattino quando invece a
+    quell'ora e' gia' tardi. Il discernimento fra le due forme lo fa
+    `Conferimento.apertura_dichiarata`, sul testo del gestore.
+    """
+    minuti = conferimento.apertura_dichiarata
+    return istante(giorno.giorno, minuti if minuti is not None else 0)
+
+
+def in_finestra(
+    giorno: GiornoRaccolta, conferimento: Conferimento, adesso: datetime
+) -> bool:
+    """Vero se quella frazione si puo' mettere fuori proprio adesso.
+
+    Due condizioni, e sono diverse da quelle di `solo_aperti`: li' basta non
+    essere scaduti, qui bisogna anche essere gia' cominciati.
+    """
+    return (
+        apertura_conferimento(giorno, conferimento)
+        <= adesso
+        < scadenza(giorno, conferimento)
+    )
+
+
+def solo_in_finestra(
+    giorno: GiornoRaccolta | None, adesso: datetime
+) -> GiornoRaccolta | None:
+    """La stessa sera, con le sole frazioni esponibili IN QUESTO MOMENTO.
+
+    Fratello di `solo_aperti`, e la differenza e' tutta qui: `solo_aperti`
+    toglie cio' che e' scaduto e risponde alla domanda "che cosa tocca oggi",
+    questa toglie anche cio' che non e' ancora cominciato e risponde a "che
+    cosa posso portare fuori adesso". Alle sei di sera del giorno della carta
+    la prima dice "Carta" e la seconda dice niente, ed e' giusto cosi'.
+    """
+    if giorno is None:
+        return None
+    dentro = tuple(c for c in giorno.conferimenti if in_finestra(giorno, c, adesso))
+    if not dentro:
+        return None
+    if len(dentro) == len(giorno.conferimenti):
+        return giorno
+    return dataclasses.replace(giorno, conferimenti=dentro)
+
+
 def apertura(giorno: GiornoRaccolta) -> datetime:
     """Quando si apre l'esposizione di quella sera.
 
@@ -207,25 +262,32 @@ def prossimo_confine(calendario: Calendario | None, adesso: datetime) -> datetim
 
     Tre cose spostano il significato delle entita' senza che arrivi un dato
     nuovo: la mezzanotte, che cambia la data di oggi e quindi la prossima
-    raccolta; l'apertura della prima raccolta ancora da fare, che accende cio'
-    che si puo' esporre - e che puo' cadere fra giorni, non stasera; e la
-    scadenza di OGNI SINGOLA frazione, non solo l'ultima, perche' in una sera
-    con finestre diverse ognuna sparisce dall'elenco per conto suo.
-    Si prende la piu' vicina.
+    raccolta; l'apertura di OGNI SINGOLA frazione, che accende cio' che si puo'
+    portare fuori - e che puo' cadere fra giorni, non stasera; e la scadenza di
+    OGNI SINGOLA frazione, perche' in una sera con finestre diverse ognuna
+    compare e sparisce per conto suo. Si prende la piu' vicina.
 
-    Le scadenze delle singole frazioni comprendono gia' quella del giorno, che
-    e' la piu' tarda fra loro: non serve aggiungerla a parte.
+    Per frazione e non per giorno, da entrambi i lati. Le scadenze comprendono
+    gia' la chiusura del giorno, che e' la piu' tarda fra loro; le aperture
+    comprendono gia' `apertura`, che e' la piu' presto fra quelle dichiarate.
+
+    Dal lato delle scadenze la differenza e' misurata su un caso vivo: a
+    Gradara una frazione chiude alle 23:00 e l'altra alle 06:00, e fermarsi al
+    giorno teneva la prima nell'elenco per un'ora dopo la scadenza. Dal lato
+    delle aperture no: fra i cinque comuni censiti non esiste una sera con due
+    aperture diverse, e finche' e' cosi' il minimo basterebbe. Costa una riga
+    tenerle tutte, e il giorno in cui una comparisse nessuno starebbe a
+    ricontrollare questo file.
     """
     confini = [dt_util.start_of_local_day(adesso) + timedelta(days=1)]
 
     if (giorno := giorno_in_corso(calendario, adesso)) is not None:
-        confini.extend(
-            momento
-            for c in giorno.conferimenti
-            if (momento := scadenza(giorno, c)) > adesso
-        )
-        inizio = apertura(giorno)
-        if inizio > adesso:
-            confini.append(inizio)
+        for conferimento in giorno.conferimenti:
+            for momento in (
+                scadenza(giorno, conferimento),
+                apertura_conferimento(giorno, conferimento),
+            ):
+                if momento > adesso:
+                    confini.append(momento)
 
     return min(confini)

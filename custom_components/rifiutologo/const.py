@@ -19,10 +19,14 @@ CONF_CIVICO_NUMERO: Final = "civico_numero"
 
 CONF_EVENTI_CON_ORARIO: Final = "eventi_con_orario"
 CONF_CALENDARI_PER_FRAZIONE: Final = "calendari_per_frazione"
+CONF_SENSORI_PER_FRAZIONE: Final = "sensori_per_frazione"
 CONF_GIORNI_DA_MOSTRARE: Final = "giorni_da_mostrare"
 
 DEFAULT_EVENTI_CON_ORARIO: Final = True
 DEFAULT_CALENDARI_PER_FRAZIONE: Final = False
+# Spento di serie come i calendari: a Padova sono sei entita' in piu' per
+# indirizzo, e chi non le vuole non deve ritrovarsele.
+DEFAULT_SENSORI_PER_FRAZIONE: Final = False
 DEFAULT_GIORNI_DA_MOSTRARE: Final = 365
 MIN_GIORNI_DA_MOSTRARE: Final = 30
 MAX_GIORNI_DA_MOSTRARE: Final = 365
@@ -37,6 +41,12 @@ GIORNI_SETTIMANA: Final = 7
 # Il calendario di un gestore di rifiuti cambia qualche volta l'anno: le ore sono
 # l'ordine di grandezza giusto per il polling, non i minuti.
 UPDATE_INTERVAL_HOURS: Final = 12
+
+# Quante date future elencare nell'attributo `prossime` di un sensore per
+# frazione. Cinque bastano a vedere il passo: a Padova il vetro passa ogni
+# trenta giorni, e cinque date coprono mezzo anno senza gonfiare il database
+# di Home Assistant, che archivia gli attributi a ogni cambio di stato.
+PROSSIME_DA_ELENCARE: Final = 5
 
 # Quanti intervalli di aggiornamento devono passare fra due tentativi di
 # ritrovare l'indirizzo per nome, finche' il calendario resta vuoto. Con un

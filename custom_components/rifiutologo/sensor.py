@@ -1,20 +1,30 @@
-"""I sensori: cosa esporre stasera, che cosa esce in settimana, e in che zona sei."""
+"""I sensori: cosa esporre stasera, che cosa esce in settimana, e a chi tocca."""
 
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
-from homeassistant.core import HomeAssistant
+from homeassistant.components.sensor import (
+    DOMAIN as DOMINIO_SENSORE,
+    SensorDeviceClass,
+    SensorEntity,
+)
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
-from .api import GiornoRaccolta
-from .const import GIORNI_SETTIMANA, icona_per_frazione
+from .api import Conferimento, GiornoRaccolta
+from .const import (
+    CONF_SENSORI_PER_FRAZIONE,
+    DEFAULT_SENSORI_PER_FRAZIONE,
+    GIORNI_SETTIMANA,
+    PROSSIME_DA_ELENCARE,
+    icona_per_frazione,
+)
 from .coordinator import RifiutologoConfigEntry, RifiutologoCoordinator
-from .entity import RifiutologoEntity, attributi_giorno
-from .orari import agenda, apertura, solo_aperti
+from .entity import RifiutologoEntity, attributi_giorno, collega_per_frazione
+from .orari import agenda, apertura, apertura_conferimento, scadenza, solo_aperti
 
 NESSUNA = "nessuna"
 LUNGHEZZA_MASSIMA_STATO = 255
@@ -25,8 +35,26 @@ async def async_setup_entry(
     entry: RifiutologoConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Crea i sensori dell'indirizzo."""
+    """Crea i sensori dell'indirizzo, e se chiesto uno per ogni frazione."""
     coordinator = entry.runtime_data
+
+    @callback
+    def _costruisci(frazione: str, colore: str | None, chiave: str) -> SensorEntity:
+        return SensoreFrazione(coordinator, frazione, colore, chiave)
+
+    per_frazione = collega_per_frazione(
+        hass,
+        entry,
+        attiva=entry.options.get(
+            CONF_SENSORI_PER_FRAZIONE, DEFAULT_SENSORI_PER_FRAZIONE
+        ),
+        dominio=DOMINIO_SENSORE,
+        # Le entita' fisse hanno unique_id come "<voce>_zona": nessuna comincia
+        # con "frazione_", quindi la pulizia del registro non le sfiora.
+        prefisso="frazione_",
+        costruttore=_costruisci,
+        async_add_entities=async_add_entities,
+    )
     async_add_entities(
         [
             SensoreEsposizioneStasera(coordinator),
@@ -35,6 +63,7 @@ async def async_setup_entry(
             SensoreGiorniAllaProssima(coordinator),
             SensoreSettimana(coordinator),
             SensoreZona(coordinator),
+            *per_frazione,
         ]
     )
 
@@ -222,6 +251,100 @@ class SensoreSettimana(_SensoreBase):
             "a": (oggi + timedelta(days=GIORNI_SETTIMANA - 1)).isoformat(),
             "frazioni": _frazioni_distinte(giorni),
             "giorni": [attributi_giorno(giorno, oggi) for giorno in giorni],
+        }
+
+
+class SensoreFrazione(_SensoreBase):
+    """Quando tocca a UNA frazione: la domanda "e il vetro quando passa?".
+
+    Lo stato e' la data della prossima esposizione di quella frazione, e come
+    "Prossima raccolta" non guarda mai indietro: un sensore con device_class
+    DATE che pubblica ieri e' un sensore che mente. Chi vuole sapere se si e'
+    ancora in tempo stanotte usa "Raccolta stasera", che quel mestiere lo fa.
+    """
+
+    _attr_device_class = SensorDeviceClass.DATE
+
+    def __init__(
+        self,
+        coordinator: RifiutologoCoordinator,
+        frazione: str,
+        colore: str | None,
+        chiave: str,
+    ) -> None:
+        """Costruisce il sensore di una frazione."""
+        super().__init__(coordinator, f"frazione_{chiave}")
+        self._frazione = frazione
+        self._colore = colore
+        self._attr_name = frazione
+        self._attr_icon = icona_per_frazione(frazione)
+
+    def _sue_sere(self, adesso: datetime) -> list[tuple[GiornoRaccolta, Conferimento]]:
+        """Le sere ancora da fare in cui compare questa frazione.
+
+        Stesso metro di `prossima_raccolta`, applicato alla singola frazione:
+        data non passata E finestra non ancora chiusa. Servono entrambe, per
+        gli stessi due motivi.
+        """
+        calendario = self.coordinator.data
+        if calendario is None:
+            return []
+        oggi = adesso.date()
+        trovate: list[tuple[GiornoRaccolta, Conferimento]] = []
+        for giorno in calendario.giorni:
+            if giorno.giorno < oggi:
+                continue
+            for conferimento in giorno.conferimenti:
+                if (
+                    conferimento.frazione == self._frazione
+                    and scadenza(giorno, conferimento) > adesso
+                ):
+                    trovate.append((giorno, conferimento))
+                    break
+            if len(trovate) >= PROSSIME_DA_ELENCARE:
+                break
+        return trovate
+
+    @property
+    def native_value(self) -> date | None:
+        """La data della prossima esposizione di questa frazione."""
+        sere = self._sue_sere(dt_util.now())
+        return sere[0][0].giorno if sere else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Tutto quello che il gestore dice di QUESTA frazione."""
+        adesso = dt_util.now()
+        sere = self._sue_sere(adesso)
+        base: dict[str, Any] = {
+            "frazione": self._frazione,
+            "colore": self._colore,
+            "prossime": [giorno.giorno.isoformat() for giorno, _ in sere],
+        }
+        if not sere:
+            return base | {
+                "giorni_mancanti": None,
+                "giorno_settimana": None,
+                "inizio_esposizione": None,
+                "fine_esposizione": None,
+                "orario_esposizione": None,
+                "orario_raccolta": None,
+                "nota": None,
+                "straordinario": False,
+            }
+
+        giorno, conferimento = sere[0]
+        return base | {
+            "giorni_mancanti": (giorno.giorno - adesso.date()).days,
+            "giorno_settimana": giorno.giorno.isoweekday(),
+            "inizio_esposizione": apertura_conferimento(
+                giorno, conferimento
+            ).isoformat(),
+            "fine_esposizione": scadenza(giorno, conferimento).isoformat(),
+            "orario_esposizione": conferimento.orario,
+            "orario_raccolta": conferimento.orario_raccolta,
+            "nota": conferimento.note,
+            "straordinario": conferimento.straordinario,
         }
 
 
