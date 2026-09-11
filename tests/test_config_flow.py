@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.rifiutologo.api import BASE_URL
+from custom_components.rifiutologo.api import BASE_URL, Via
+from custom_components.rifiutologo.config_flow import _trova
 from custom_components.rifiutologo.const import (
     CONF_CALENDARI_PER_FRAZIONE,
     CONF_CIVICO_NUMERO,
@@ -76,17 +77,126 @@ async def test_flusso_completo(hass: HomeAssistant, gestore) -> None:
 
 
 async def test_le_tendine_sono_piene(hass: HomeAssistant, gestore) -> None:
-    """Ogni passo offre le voci vere del gestore, non un campo libero."""
+    """Ogni passo offre le voci vere del gestore, e si possono cercare."""
     risultato = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
     selettore = risultato["data_schema"].schema["comune"]
     valori = [o["value"] for o in selettore.config["options"]]
     assert str(COMUNE_ID) in valori
-    assert selettore.config["custom_value"] is False
+    # `custom_value` non serve ad accettare valori inventati - quelli li
+    # respinge il flusso, e c'e' un test apposta piu' sotto - ma e' il campo da
+    # cui Home Assistant decide se disegnare una casella di ricerca o un menu'
+    # da scorrere. Con 2200 vie la differenza e' tutto.
+    assert selettore.config["custom_value"] is True
     # Ordine alfabetico, non quello del gestore.
     etichette = [o["label"] for o in selettore.config["options"]]
     assert etichette == sorted(etichette)
+
+
+@pytest.mark.parametrize(
+    ("scritto", "atteso"),
+    [
+        ("Padova", "Padova"),
+        ("padova", "minuscolo: il nome e' quello lo stesso"),
+        ("  Padova  ", "spazi intorno"),
+        ("Padova (PD)", "l'etichetta con la provincia"),
+    ],
+)
+async def test_il_comune_si_puo_anche_scrivere(
+    hass: HomeAssistant, gestore, scritto: str, atteso: str
+) -> None:
+    """Confermare il testo senza cliccare un suggerimento deve funzionare.
+
+    La casella di ricerca lascia premere invio su cio' che si e' digitato, e
+    allora al flusso arriva il nome invece dell'id. Rifiutare un nome scritto
+    giusto sarebbe una pedanteria che l'utente leggerebbe come un difetto.
+    """
+    risultato = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    risultato = await hass.config_entries.flow.async_configure(
+        risultato["flow_id"], {"comune": scritto}
+    )
+    assert risultato["type"] is FlowResultType.FORM, atteso
+    assert risultato["step_id"] == "via", atteso
+
+
+# Il campo del modulo si chiama come il passo, tranne al primo: li' il passo e'
+# "user" perche' lo vuole Home Assistant, ma il campo e' "comune".
+CAMPO_DEL_PASSO = {"user": "comune", "via": "via", "civico": "civico"}
+
+
+@pytest.mark.parametrize(
+    ("passo", "scritto", "errore"),
+    [
+        ("user", "Vattelapesca", "comune_sconosciuto"),
+        ("via", "VIA CHE NON ESISTE", "via_sconosciuta"),
+        ("civico", "999/Z", "civico_sconosciuto"),
+    ],
+)
+async def test_un_valore_inventato_lo_dice(
+    hass: HomeAssistant, gestore, passo: str, scritto: str, errore: str
+) -> None:
+    """Il campo e' cercabile, non libero: cio' che non esiste va respinto.
+
+    E va respinto DICENDOLO. Prima questo ramo non era raggiungibile e il
+    modulo si ripresentava muto: con la casella di ricerca ci si arriva
+    scrivendo qualunque cosa e premendo invio, e restare zitti sarebbe il modo
+    piu' sicuro di far credere che l'integrazione sia rotta.
+    """
+    risultato = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    if passo != "user":
+        risultato = await hass.config_entries.flow.async_configure(
+            risultato["flow_id"], {"comune": str(COMUNE_ID)}
+        )
+    if passo == "civico":
+        risultato = await hass.config_entries.flow.async_configure(
+            risultato["flow_id"], {"via": str(VIA_ID)}
+        )
+
+    risultato = await hass.config_entries.flow.async_configure(
+        risultato["flow_id"], {CAMPO_DEL_PASSO[passo]: scritto}
+    )
+    assert risultato["type"] is FlowResultType.FORM
+    assert risultato["step_id"] == passo, "si resta dove si era"
+    assert risultato["errors"] == {"base": errore}
+
+
+async def test_la_via_scritta_per_esteso_vale(hass: HomeAssistant, gestore) -> None:
+    """Anche la via, non solo il comune: stesso patto su tutti e tre i passi."""
+    risultato = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    risultato = await hass.config_entries.flow.async_configure(
+        risultato["flow_id"], {"comune": str(COMUNE_ID)}
+    )
+    risultato = await hass.config_entries.flow.async_configure(
+        risultato["flow_id"], {"via": "via bernardo trevisan"}
+    )
+    assert risultato["step_id"] == "civico"
+
+    # E il civico, che e' una stringa e non un intero.
+    risultato = await hass.config_entries.flow.async_configure(
+        risultato["flow_id"], {"civico": "8"}
+    )
+    assert risultato["type"] is FlowResultType.CREATE_ENTRY
+    assert risultato["data"][CONF_CIVICO_NUMERO] == "8"
+
+
+async def test_tutte_le_tendine_sono_cercabili(hass: HomeAssistant, gestore) -> None:
+    """Non serve a niente cercare il comune se poi le 2200 vie si scorrono."""
+    risultato = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    for campo, avanti in (("comune", str(COMUNE_ID)), ("via", str(VIA_ID))):
+        assert risultato["data_schema"].schema[campo].config["custom_value"] is True
+        risultato = await hass.config_entries.flow.async_configure(
+            risultato["flow_id"], {campo: avanti}
+        )
+    assert risultato["data_schema"].schema["civico"].config["custom_value"] is True
 
 
 async def test_indirizzo_senza_porta_a_porta(
@@ -225,3 +335,22 @@ async def test_rete_giu_resta_un_abort(hass: HomeAssistant, aioclient_mock) -> N
     risultato = await _fino_al_civico(hass, atteso=None)
     assert risultato["type"] is FlowResultType.ABORT
     assert risultato["reason"] == "cannot_connect"
+
+
+def test_trova_non_pesca_niente_con_una_stringa_vuota() -> None:
+    """Il contratto: un valore vuoto non combacia con niente, mai.
+
+    Si prova la funzione da sola e non attraverso il flusso, perche' oggi dal
+    flusso non ci si arriva: il parser scarta le voci senza nome, quindi non
+    esiste un elemento con cui una stringa vuota possa combaciare. Qui se ne
+    costruisce uno a mano - che e' l'unico modo di dire davvero che cosa deve
+    succedere se un giorno il gestore mandasse un nome bianco.
+    """
+    vie = [Via(id=1, nome=""), Via(id=2, nome="VIA VERA")]
+    nomi = (lambda v: (v.nome,),)[0]
+
+    assert _trova(vie, "", lambda v: v.id, nomi) is None
+    assert _trova(vie, "   ", lambda v: v.id, nomi) is None
+    # E quello vero si trova lo stesso, per id e per nome.
+    assert _trova(vie, "2", lambda v: v.id, nomi).id == 2
+    assert _trova(vie, "via vera", lambda v: v.id, nomi).id == 2

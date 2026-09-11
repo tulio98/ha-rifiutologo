@@ -39,7 +39,12 @@ def test_errori_e_abort_hanno_un_testo(nome: str) -> None:
     sorgente = (RADICE / "config_flow.py").read_text(encoding="utf-8")
 
     usate = set(re.findall(r'"base"\]?\s*[:=]\s*"(\w+)"', sorgente))
-    usate |= set(re.findall(r'errore="(\w+)"', sorgente))
+    # `\s*` perche' la chiave d'errore si scrive in due modi: passata al passo
+    # successivo - errore="..." - oppure assegnata a una variabile locale
+    # quando il modulo si ripresenta da solo - errore = "...". Senza gli spazi
+    # il secondo caso non veniva visto, e un testo mancante li' non si sarebbe
+    # notato.
+    usate |= set(re.findall(r'errore\s*=\s*"(\w+)"', sorgente))
     aborti = set(re.findall(r'async_abort\(reason="(\w+)"\)', sorgente))
     # Questi due li produce Home Assistant per conto suo, ma il testo lo mette
     # l'integrazione: per una custom non c'e' nessun testo di serie.

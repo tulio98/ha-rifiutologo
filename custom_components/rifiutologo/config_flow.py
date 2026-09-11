@@ -7,6 +7,7 @@ da chiedere all'utente. Per questo qui non si chiede nessuna zona.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import voluptuous as vol
@@ -102,11 +103,17 @@ class RifiutologoConfigFlow(ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="cannot_connect")
 
         if user_input is not None:
-            scelto = _trova(self._comuni, user_input[CAMPO_COMUNE], lambda c: c.id)
+            scelto = _trova(
+                self._comuni,
+                user_input[CAMPO_COMUNE],
+                lambda c: c.id,
+                lambda c: (c.nome, c.etichetta),
+            )
             if scelto is not None:
                 self._comune = scelto
                 self._vie = []
                 return await self.async_step_via()
+            errore = "comune_sconosciuto"
 
         opzioni = [
             SelectOptionDict(value=str(c.id), label=c.etichetta)
@@ -141,11 +148,14 @@ class RifiutologoConfigFlow(ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="cannot_connect")
 
         if user_input is not None:
-            scelta = _trova(self._vie, user_input[CAMPO_VIA], lambda v: v.id)
+            scelta = _trova(
+                self._vie, user_input[CAMPO_VIA], lambda v: v.id, lambda v: (v.nome,)
+            )
             if scelta is not None:
                 self._via = scelta
                 self._civici = []
                 return await self.async_step_civico()
+            errore = "via_sconosciuta"
 
         opzioni = [
             SelectOptionDict(value=str(v.id), label=v.nome)
@@ -183,8 +193,15 @@ class RifiutologoConfigFlow(ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="cannot_connect")
 
         if user_input is not None:
-            civico = _trova(self._civici, user_input[CAMPO_CIVICO], lambda c: c.id)
-            if civico is not None:
+            civico = _trova(
+                self._civici,
+                user_input[CAMPO_CIVICO],
+                lambda c: c.id,
+                lambda c: (c.numero,),
+            )
+            if civico is None:
+                errori["base"] = "civico_sconosciuto"
+            else:
                 try:
                     calendario = await self._client.calendario(
                         self._comune.id,
@@ -324,20 +341,63 @@ class RifiutologoOptionsFlow(OptionsFlowWithReload):
 
 
 def _tendina(opzioni: list[SelectOptionDict]) -> SelectSelector:
-    """Una tendina ricercabile, senza valori liberi."""
+    """Una tendina con la casella di ricerca sopra.
+
+    `custom_value=True` non serve a permettere valori inventati - quelli
+    vengono respinti qui sotto - ma perche' e' l'unico modo di avere la
+    ricerca. Home Assistant sceglie il componente da questo campo e da nessun
+    altro: con `False` disegna `ha-select`, che e' un menu' e basta, e con
+    2200 vie diventa un rotolo da scorrere; con `True` disegna
+    `ha-generic-picker`, che ha la casella di testo e filtra mentre si scrive.
+    Verificato sul sorgente del frontend 20260826.6, quello che accompagna
+    Home Assistant 2026.9.1: `ha-selector-select.ts`, l'ultimo ramo di
+    `render()`.
+
+    La ricerca e' fuzzy e non guarda da dove comincia la parola
+    (`ignoreLocation: true` in `fuseMultiTerm.ts`), quindi "bernardo" trova
+    "VIA BERNARDO TREVISAN" - che e' il punto, visto che a Padova duemila vie
+    su duemiladuecento cominciano con "VIA". I termini separati da spazio
+    devono corrispondere tutti, quindi funziona anche "bernardo trevisan".
+
+    `sort=False` perche' l'ordine se lo sono gia' dato i chiamanti, sul nome.
+    """
     return SelectSelector(
         SelectSelectorConfig(
             options=opzioni,
             mode=SelectSelectorMode.DROPDOWN,
-            custom_value=False,
+            custom_value=True,
             sort=False,
         )
     )
 
 
-def _trova[T](elementi: list[T], valore: str, chiave: Any) -> T | None:
-    """Ritrova un elemento dall'id serializzato come stringa dalla tendina."""
+def _trova[T](
+    elementi: list[T],
+    valore: str,
+    chiave: Callable[[T], Any],
+    nomi: Callable[[T], tuple[str, ...]] = lambda _elemento: (),
+) -> T | None:
+    """Ritrova un elemento scelto dalla tendina, o scritto a mano.
+
+    Scegliendo dall'elenco arriva l'id serializzato come stringa, ed e' il caso
+    normale. Ma la casella di ricerca lascia anche confermare cio' che si e'
+    digitato senza cliccare un suggerimento, e allora arriva il testo: se
+    combacia con un nome vero lo si accetta, perche' rifiutare "via bernardo trevisan" scritto giusto sarebbe una pedanteria. Tutto il resto e' None, e
+    chi chiama lo trasforma in un errore leggibile invece che in un modulo che
+    si ripresenta senza dire niente.
+    """
     for elemento in elementi:
         if str(chiave(elemento)) == valore:
+            return elemento
+    scritto = valore.strip().casefold()
+    if not scritto:
+        # Oggi non ci si arriva: il parser scarta le voci senza nome, quindi
+        # nessun elemento ha un nome vuoto con cui una stringa vuota possa
+        # combaciare. E' il contratto della funzione, non un caso vivo - e
+        # costa una riga tenerlo vero anche se un domani il gestore mandasse
+        # un nome bianco.
+        return None
+    for elemento in elementi:
+        if any(nome.casefold() == scritto for nome in nomi(elemento)):
             return elemento
     return None

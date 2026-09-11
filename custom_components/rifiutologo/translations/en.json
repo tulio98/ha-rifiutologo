@@ -8,17 +8,17 @@
           "comune": "Municipality"
         },
         "data_description": {
-          "comune": "The list comes straight from the provider."
+          "comune": "Type a few letters of the name: the list narrows as you type. It comes straight from the provider."
         }
       },
       "via": {
         "title": "Choose your street",
-        "description": "Streets of {comune}, spelled the way the provider spells them. Start typing to filter the list.",
+        "description": "Streets of {comune}, spelled the way the provider spells them. Padua has 2,200 of them: use the search box rather than scrolling.",
         "data": {
           "via": "Street"
         },
         "data_description": {
-          "via": "If your street is missing, the provider does not serve it under that name."
+          "via": "Type any part of the name, the middle included: “bernardo” is enough to find “VIA BERNARDO TREVISAN”. If your street never shows up, the provider does not serve it under that name."
         }
       },
       "civico": {
@@ -28,14 +28,17 @@
           "civico": "House number"
         },
         "data_description": {
-          "civico": "House numbers may carry a suffix, for example 1/A or 2/2."
+          "civico": "Type the number to jump straight to it. House numbers may carry a suffix, for example 1/A or 2/2."
         }
       }
     },
     "error": {
       "cannot_connect": "Cannot reach the provider. Try again in a few minutes.",
+      "civico_sconosciuto": "This house number is not among the ones the provider lists for this street. Type it in the box and pick a suggestion.",
+      "comune_sconosciuto": "This municipality is not in the provider's list. Type a few letters of the name and pick one of the suggestions.",
       "comune_senza_vie": "The provider lists no streets for this municipality. Pick another one.",
       "nessun_pap": "This address has no kerbside collection: it is served by street containers, and the provider publishes no calendar for it. Check the house number, or try another address.",
+      "via_sconosciuta": "This street is not in the provider's list. Type any part of the name - the middle works too, for example “bernardo” finds “VIA BERNARDO TREVISAN” - and pick one of the suggestions.",
       "via_senza_civici": "The provider lists no house numbers for this street. Pick another street."
     },
     "abort": {

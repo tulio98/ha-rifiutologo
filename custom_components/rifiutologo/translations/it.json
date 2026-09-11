@@ -8,17 +8,17 @@
           "comune": "Comune"
         },
         "data_description": {
-          "comune": "L'elenco arriva direttamente dal gestore."
+          "comune": "Scrivi qualche lettera del nome: l'elenco si restringe mentre scrivi. Arriva direttamente dal gestore."
         }
       },
       "via": {
         "title": "Scegli la via",
-        "description": "Le vie di {comune}, scritte come le scrive il gestore. Comincia a digitare per filtrare l'elenco.",
+        "description": "Le vie di {comune}, scritte come le scrive il gestore. A Padova sono 2200: usa la casella di ricerca invece di scorrerle.",
         "data": {
           "via": "Via"
         },
         "data_description": {
-          "via": "Se la tua via non c'e', il gestore non la serve con quel nome."
+          "via": "Scrivi qualunque pezzo del nome, anche in mezzo: «bernardo» basta per trovare «VIA BERNARDO TREVISAN». Se la tua via non compare, il gestore non la serve con quel nome."
         }
       },
       "civico": {
@@ -28,14 +28,17 @@
           "civico": "Numero civico"
         },
         "data_description": {
-          "civico": "I civici possono avere un suffisso, per esempio 1/A oppure 2/2."
+          "civico": "Scrivi il numero per trovarlo subito. I civici possono avere un suffisso, per esempio 1/A oppure 2/2."
         }
       }
     },
     "error": {
       "cannot_connect": "Non riesco a raggiungere il gestore. Riprova fra qualche minuto.",
+      "civico_sconosciuto": "Questo numero civico non e' fra quelli che il gestore elenca per questa via. Scrivilo nella casella e scegli un suggerimento.",
+      "comune_sconosciuto": "Questo comune non e' nell'elenco del gestore. Scrivi qualche lettera del nome e scegli uno dei suggerimenti.",
       "comune_senza_vie": "Il gestore non elenca nessuna via per questo comune. Scegline un altro.",
       "nessun_pap": "Questo indirizzo non ha la raccolta porta a porta: e' servito da cassonetti stradali e il gestore non pubblica alcun calendario. Controlla il civico, oppure prova un altro indirizzo.",
+      "via_sconosciuta": "Questa via non e' nell'elenco del gestore. Scrivi qualche lettera del nome - vanno bene anche quelle in mezzo, per esempio «bernardo» per «VIA BERNARDO TREVISAN» - e scegli uno dei suggerimenti.",
       "via_senza_civici": "Il gestore non elenca nessun civico per questa via. Scegline un'altra."
     },
     "abort": {

@@ -246,11 +246,18 @@ e riavvia Home Assistant.
 
 **Impostazioni → Dispositivi e servizi → Aggiungi integrazione → Il Rifiutologo**
 
-Tre passi, tutti a tendina, tutti alimentati dall'elenco vero del gestore:
+Tre passi, tutti con una **casella di ricerca**, tutti alimentati dall'elenco vero del gestore:
 
 1. **Comune** — 181 voci
-2. **Via** — a Padova sono 2200; comincia a digitare per filtrare
+2. **Via** — a Padova sono 2200: **si cercano, non si scorrono**
 3. **Civico** — sono stringhe: esistono `1/A`, `1/SNC`, `2/2`
+
+Scrivi **qualunque pezzo** del nome, anche in mezzo: `bernardo` trova `VIA BERNARDO
+TREVISAN`, e `bernardo trevisan` pure. Serve, perché a Padova quasi tutte le vie cominciano con «VIA» e una
+ricerca che guardasse solo l'inizio non filtrerebbe niente.
+
+> Se scrivi qualcosa che nell'elenco del gestore non c'è, l'integrazione **te lo dice**
+> invece di ripresentarti il modulo in silenzio. Il campo è cercabile, non libero.
 
 **La zona non te la chiede nessuno**, ed è giusto così: l'API lavora per indirizzo, e il turno
 di raccolta è una conseguenza del civico. Se vuoi la conferma di quale calendario ti è toccato,
