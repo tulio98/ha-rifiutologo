@@ -86,6 +86,9 @@
       "prossima_raccolta": {
         "name": "Next collection"
       },
+      "settimana": {
+        "name": "Collections this week"
+      },
       "zona": {
         "name": "Collection zone"
       }

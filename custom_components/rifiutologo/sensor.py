@@ -1,8 +1,8 @@
-"""I sensori: cosa esporre stasera, quando tocca di nuovo, e in che zona sei."""
+"""I sensori: cosa esporre stasera, che cosa esce in settimana, e in che zona sei."""
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
@@ -11,10 +11,10 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from .api import GiornoRaccolta
-from .const import icona_per_frazione
+from .const import GIORNI_SETTIMANA, icona_per_frazione
 from .coordinator import RifiutologoConfigEntry, RifiutologoCoordinator
 from .entity import RifiutologoEntity, attributi_giorno
-from .orari import apertura, solo_aperti
+from .orari import agenda, apertura, solo_aperti
 
 NESSUNA = "nessuna"
 LUNGHEZZA_MASSIMA_STATO = 255
@@ -33,6 +33,7 @@ async def async_setup_entry(
             SensoreProssimaRaccolta(coordinator),
             SensoreProssimaEsposizione(coordinator),
             SensoreGiorniAllaProssima(coordinator),
+            SensoreSettimana(coordinator),
             SensoreZona(coordinator),
         ]
     )
@@ -174,6 +175,54 @@ class SensoreGiorniAllaProssima(_SensoreBase):
         # Non puo' essere negativo: `prossima` esclude per costruzione i giorni
         # gia' passati. Zero vuol dire stasera.
         return (giorno.giorno - self._oggi).days
+
+
+def _frazioni_distinte(giorni: list[GiornoRaccolta]) -> list[str]:
+    """Le frazioni di piu' sere, senza doppioni e nell'ordine in cui capitano."""
+    viste: dict[str, None] = {}
+    for giorno in giorni:
+        viste.update(dict.fromkeys(giorno.frazioni))
+    return list(viste)
+
+
+class SensoreSettimana(_SensoreBase):
+    """Tutte le sere di esposizione dei prossimi sette giorni, in una entita' sola.
+
+    Lo stato conta le SERE, non le frazioni: due bidoni nella stessa sera fanno
+    uno, perche' la domanda a cui risponde e' quante volte si esce di casa.
+    L'elenco sta negli attributi, e ogni sera ha la stessa forma che hanno gli
+    altri sensori: una struttura sola da imparare, e nessun modo di dissentire
+    da loro visto che il metro della finestra e' lo stesso.
+    """
+
+    _attr_translation_key = "settimana"
+
+    def __init__(self, coordinator: RifiutologoCoordinator) -> None:
+        """Costruisce il sensore."""
+        super().__init__(coordinator, "settimana")
+
+    @property
+    def native_value(self) -> int | None:
+        """Quante sere di esposizione restano dentro la finestra."""
+        if self.coordinator.data is None:
+            return None
+        return len(agenda(self.coordinator.data, dt_util.now(), GIORNI_SETTIMANA))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """L'elenco delle sere, e le frazioni che compaiono nella settimana."""
+        adesso = dt_util.now()
+        oggi = adesso.date()
+        giorni = agenda(self.coordinator.data, adesso, GIORNI_SETTIMANA)
+        return {
+            # `da` e' oggi, ma la prima sera dell'elenco puo' essere quella di
+            # IERI, se la sua finestra scavalca la mezzanotte ed e' ancora
+            # aperta. E' roba ancora da fare: nasconderla sarebbe il difetto.
+            "da": oggi.isoformat(),
+            "a": (oggi + timedelta(days=GIORNI_SETTIMANA - 1)).isoformat(),
+            "frazioni": _frazioni_distinte(giorni),
+            "giorni": [attributi_giorno(giorno, oggi) for giorno in giorni],
+        }
 
 
 class SensoreZona(_SensoreBase):

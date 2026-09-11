@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .api import GiornoRaccolta
 from .const import ATTRIBUTION, DOMAIN, MANUFACTURER
 from .coordinator import RifiutologoCoordinator
+from .orari import apertura, chiusura
 
 URL_SERVIZIO = "https://www.ilrifiutologo.it"
 
@@ -51,7 +52,10 @@ def attributi_giorno(giorno: GiornoRaccolta | None, oggi: date) -> dict[str, Any
             "frazioni": [],
             "colori": {},
             "data": None,
+            "giorno_settimana": None,
             "giorni_mancanti": None,
+            "inizio_esposizione": None,
+            "fine_esposizione": None,
             "orario_esposizione": None,
             "orari_esposizione": {},
             "orario_raccolta": None,
@@ -71,10 +75,21 @@ def attributi_giorno(giorno: GiornoRaccolta | None, oggi: date) -> dict[str, Any
             c.frazione: c.colore for c in giorno.conferimenti if c.colore is not None
         },
         "data": giorno.giorno.isoformat(),
+        # ISO: 1 e' lunedi', 7 e' domenica. Il numero e non il nome, perche' il
+        # nome andrebbe scritto in una lingua sola e gli attributi non si
+        # traducono; il README mostra come girarlo in italiano in tre righe.
+        "giorno_settimana": giorno.giorno.isoweekday(),
         # Zero vuol dire stasera. Non scende sotto zero: quando la finestra
         # scavalca la mezzanotte il giorno di esposizione resta "adesso", non
         # diventa "ieri".
         "giorni_mancanti": max(0, (giorno.giorno - oggi).days),
+        # Gli stessi due istanti su cui si regolano il calendario e i risvegli
+        # del coordinator, non un secondo conto fatto qui: `fine_esposizione`
+        # e' la piu' tarda fra le frazioni ancora in elenco, e puo' cadere il
+        # giorno dopo. Senza finestra dichiarata sono la mezzanotte e la
+        # mezzanotte successiva, cioe' "quel giorno" detto senza inventare ore.
+        "inizio_esposizione": apertura(giorno).isoformat(),
+        "fine_esposizione": chiusura(giorno).isoformat(),
         # Il gestore dichiara la finestra in cui si ESPONE, non quella in cui
         # passa il camion: sono due cose diverse e vanno tenute distinte.
         # Lo scalare c'e' solo quando tutte le frazioni della sera concordano;

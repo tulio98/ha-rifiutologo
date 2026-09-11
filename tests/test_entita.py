@@ -764,3 +764,143 @@ async def test_niente_entita_orfane_mentre_la_voce_si_scarica(
     coordinator.async_set_updated_data(con_inedita)
     await hass.async_block_till_done()
     assert quanti() == prima + 1
+
+
+# --- il riepilogo della settimana --------------------------------------------
+
+
+async def test_la_settimana_elenca_le_sere(
+    hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
+) -> None:
+    """Sette giorni dal 3 al 9 settembre: quattro sere di esposizione."""
+    freezer.move_to(SERA_DI_RACCOLTA)
+    await _avvia(hass, voce)
+
+    settimana = _stato(hass, voce, "sensor", "settimana")
+    assert settimana.state == "4"
+    assert settimana.attributes["da"] == "2026-09-03"
+    assert settimana.attributes["a"] == "2026-09-09"
+
+    giorni = settimana.attributes["giorni"]
+    assert len(giorni) == int(settimana.state), "lo stato conta le sere dell'elenco"
+    assert [g["data"] for g in giorni] == [
+        "2026-09-03",
+        "2026-09-06",
+        "2026-09-08",
+        "2026-09-09",
+    ]
+    assert [g["giorni_mancanti"] for g in giorni] == [0, 3, 5, 6]
+    assert [g["giorno_settimana"] for g in giorni] == [4, 7, 2, 3], (
+        "giovedi', domenica, martedi', mercoledi'"
+    )
+    assert giorni[2]["frazioni"] == ["Indifferenziato", "Organico"]
+    assert giorni[0]["inizio_esposizione"] == "2026-09-03T20:00:00+02:00"
+    assert giorni[0]["fine_esposizione"] == "2026-09-04T00:00:00+02:00"
+
+    # L'ordine e' quello di prima comparsa, non alfabetico.
+    assert settimana.attributes["frazioni"] == ["Organico", "Indifferenziato", "Carta"]
+
+
+async def test_la_settimana_non_contraddice_stasera(
+    hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
+) -> None:
+    """La prima sera dell'elenco e' quella che il sensore di stasera racconta."""
+    freezer.move_to(datetime(2026, 9, 3, 23, 0, tzinfo=ROMA))
+    await _avvia(hass, voce)
+
+    giorni = _stato(hass, voce, "sensor", "settimana").attributes["giorni"]
+    stasera = _stato(hass, voce, "sensor", "esposizione_stasera")
+    assert stasera.state == "Organico"
+    assert giorni[0]["data"] == stasera.attributes["data"] == "2026-09-03"
+    assert giorni[0]["frazioni"] == stasera.attributes["frazioni"]
+
+    # Passata la mezzanotte la sera del 3 esce dall'elenco, e in fondo entra
+    # il 10: la finestra e' scorsa di un giorno insieme al calendario.
+    dopo = datetime(2026, 9, 4, 0, 30, tzinfo=ROMA)
+    freezer.move_to(dopo)
+    async_fire_time_changed(hass, dopo)
+    await hass.async_block_till_done()
+
+    settimana = _stato(hass, voce, "sensor", "settimana")
+    assert settimana.state == "4"
+    assert [g["data"] for g in settimana.attributes["giorni"]] == [
+        "2026-09-06",
+        "2026-09-08",
+        "2026-09-09",
+        "2026-09-10",
+    ]
+    assert _stato(hass, voce, "sensor", "esposizione_stasera").state == "nessuna"
+
+
+async def test_la_settimana_tiene_la_sera_di_ieri_ancora_aperta(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """A Bologna, alle due di notte, la sera di ieri e' ancora la prima della lista.
+
+    E' l'unico caso in cui l'elenco comincia prima di `da`, ed e' quello giusto:
+    quel sacco va ancora messo fuori.
+    """
+    registra(
+        aioclient_mock, calendario="calendario_bologna", allegati="allegati_bologna"
+    )
+    freezer.move_to(datetime(2026, 9, 4, 2, 0, tzinfo=ROMA))
+    await _avvia(hass, voce)
+
+    settimana = _stato(hass, voce, "sensor", "settimana")
+    assert settimana.attributes["da"] == "2026-09-04"
+    giorni = settimana.attributes["giorni"]
+    assert giorni[0]["data"] == "2026-09-03", "la finestra di ieri chiude alle 06:00"
+    assert giorni[0]["giorni_mancanti"] == 0, "non scende sotto zero"
+    assert giorni[0]["fine_esposizione"] == "2026-09-04T06:00:00+02:00"
+    assert _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_ON
+
+
+async def test_la_settimana_perde_la_frazione_scaduta(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Il taglio delle frazioni scadute vale anche nel riepilogo, non solo stasera.
+
+    A Gradara l'8 settembre l'Indifferenziato chiude alle 23:00 e l'Organico
+    alle 06:00: dopo le 23:00 il riepilogo deve dire una cosa sola, come il
+    sensore di stasera, e non due.
+    """
+    registra(
+        aioclient_mock, calendario="calendario_gradara", allegati="allegati_gradara"
+    )
+    freezer.move_to(datetime(2026, 9, 8, 22, 0, tzinfo=ROMA))
+    await _avvia(hass, voce)
+
+    prima = _stato(hass, voce, "sensor", "settimana").attributes["giorni"]
+    assert prima[0]["frazioni"] == ["Indifferenziato", "Organico"]
+
+    dopo = datetime(2026, 9, 8, 23, 30, tzinfo=ROMA)
+    freezer.move_to(dopo)
+    async_fire_time_changed(hass, dopo)
+    await hass.async_block_till_done()
+
+    settimana = _stato(hass, voce, "sensor", "settimana")
+    giorni = settimana.attributes["giorni"]
+    assert giorni[0]["data"] == "2026-09-08"
+    assert giorni[0]["frazioni"] == ["Organico"]
+    assert set(settimana.attributes["frazioni"]) == {
+        "Organico",
+        "Plastica",
+        "Lattine",
+        "Carta",
+    }, "l'Indifferenziato scaduto non compare piu' nemmeno nel riepilogo"
+    stasera = _stato(hass, voce, "sensor", "esposizione_stasera")
+    assert stasera.state == "Organico"
+
+
+async def test_la_settimana_senza_raccolte_dice_zero(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Zero e' una risposta; `unknown` sarebbe un'altra cosa."""
+    registra(aioclient_mock, calendario="calendario_vuoto", allegati="allegati_vuoti")
+    freezer.move_to(SERA_DI_RACCOLTA)
+    await _avvia(hass, voce)
+
+    settimana = _stato(hass, voce, "sensor", "settimana")
+    assert settimana.state == "0"
+    assert settimana.attributes["giorni"] == []
+    assert settimana.attributes["frazioni"] == []

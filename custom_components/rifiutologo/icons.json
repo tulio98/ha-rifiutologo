@@ -23,6 +23,9 @@
       "prossima_raccolta": {
         "default": "mdi:calendar-arrow-right"
       },
+      "settimana": {
+        "default": "mdi:calendar-week"
+      },
       "zona": {
         "default": "mdi:map-marker-radius"
       }

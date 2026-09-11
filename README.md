@@ -42,6 +42,7 @@ Per ogni indirizzo configurato nasce un dispositivo con queste entità:
 | **Prossima raccolta** (`sensor`) | Data della prossima raccolta, da oggi in avanti | Card e template |
 | **Prossima esposizione** (`sensor`) | Istante in cui si apre la sua finestra | `device_class: timestamp`, si legge come «fra 3 ore» |
 | **Giorni alla prossima** (`sensor`) | `0` vuol dire stasera | Soglie e colori |
+| **Raccolte in settimana** (`sensor`) | Quante sere si esce da qui a sette giorni, con l'elenco completo negli attributi | Il riepilogo settimanale, in una card sola |
 | **Zona di raccolta** (`sensor`) | `Calendario Padova Q6 2026` | Controllare di aver preso il calendario giusto (disattivata di serie) |
 
 > **Gli `entity_id` dipendono dalla lingua di Home Assistant**, perché li genera lui dal nome
@@ -58,6 +59,8 @@ Le entità che descrivono **una sera di raccolta** — *Raccolta stasera*, *Da e
 | `colori` | `{"Organico": "#701100", ...}` — la palette **ufficiale** del gestore |
 | `data` | la data della sera di esposizione |
 | `giorni_mancanti` | `0` vuol dire stasera; non scende mai sotto zero |
+| `giorno_settimana` | il numero ISO del giorno: `1` è lunedì, `7` è domenica |
+| `inizio_esposizione` / `fine_esposizione` | i due istanti veri della finestra, in ISO con il fuso; la fine può cadere il giorno dopo |
 | `orario_esposizione` | la frase del gestore, **solo se vale per tutte le frazioni della sera** |
 | `orari_esposizione` | mappa frazione → orario: dice sempre la verità |
 | `orario_raccolta` / `orari_raccolta` | idem, per il passaggio del mezzo |
@@ -65,6 +68,28 @@ Le entità che descrivono **una sera di raccolta** — *Raccolta stasera*, *Da e
 | `straordinario` | se il gestore segnala una raccolta eccezionale |
 
 *Giorni alla prossima* espone solo il numero; *Zona di raccolta* espone `pdf`, `allegati` e `nota`.
+
+### La settimana in una entità sola
+
+**Raccolte in settimana** risponde alla domanda «quante volte esco da qui a domenica».
+Lo stato conta le **sere**, non i bidoni: due frazioni la stessa sera fanno uno.
+
+| Attributo | Contenuto |
+|---|---|
+| `da` / `a` | i due estremi della finestra: oggi e oggi più sei giorni |
+| `frazioni` | tutte quelle che compaiono nella settimana, nell'ordine in cui capitano |
+| `giorni` | una voce per sera, **con gli stessi attributi della tabella qui sopra** |
+
+Le regole sono quelle di tutto il resto dell'integrazione, non altre:
+
+- una sera già chiusa **sparisce**, anche se è quella di oggi — a Modena si espone
+  dalle 00:00 alle 07:00, e a mezzogiorno oggi è già andato;
+- una sera ancora aperta **resta**, anche se è quella di ieri — a Bologna alle due di
+  notte il sacco va ancora messo fuori. È l'unico caso in cui l'elenco comincia prima di `da`;
+- di ogni sera restano **solo le frazioni non scadute**, esattamente come in *Da esporre stasera*.
+
+La prima voce di `giorni` è sempre la stessa sera che racconta *Da esporre stasera*: le due
+entità non possono dire cose diverse, perché guardano lo stesso elenco.
 
 ### I calendari a colori
 
@@ -290,6 +315,24 @@ cards:
     entities:
       - calendar.CAMBIAMI_raccolta
 ```
+
+E la settimana in una card sola, senza plugin e senza helper:
+
+```yaml
+type: markdown
+content: |-
+  {% set s = 'sensor.CAMBIAMI_raccolte_in_settimana' %}
+  {% set nomi = ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom'] %}
+  ## Da qui a domenica: {{ states(s) }} sere
+  {% for g in state_attr(s, 'giorni') or [] -%}
+  **{{ nomi[g.giorno_settimana - 1] }} {{ g.data[8:10] }}** ·
+  {{ g.frazioni | join(', ') }}
+  {% endfor %}
+```
+
+I nomi dei giorni stanno nella lista `nomi` perché gli attributi non si traducono:
+l'integrazione pubblica il numero ISO (`1` lunedì … `7` domenica) e la lingua la
+scegli tu, cambiando quella riga.
 
 ## Come funziona sotto
 

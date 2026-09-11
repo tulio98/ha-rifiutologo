@@ -15,6 +15,10 @@ finisce per rispondere il passato:
 
 - `giorno_in_corso` - che cosa si puo' ancora esporre adesso. Puo' essere ieri.
 - `prossima_raccolta` - qual e' la prossima raccolta. Non guarda mai indietro.
+
+`agenda` e' la prima delle due allungata: non una sera ma tutte quelle di una
+finestra di giorni, con lo stesso metro, cosi' il riepilogo della settimana non
+puo' dire una cosa diversa dal sensore di stasera.
 """
 
 from __future__ import annotations
@@ -119,6 +123,38 @@ def solo_aperti(
     if len(aperti) == len(giorno.conferimenti):
         return giorno
     return dataclasses.replace(giorno, conferimenti=aperti)
+
+
+def agenda(
+    calendario: Calendario | None, adesso: datetime, giorni: int
+) -> list[GiornoRaccolta]:
+    """Le sere ancora da fare, da adesso fino alla fine di una finestra di `giorni`.
+
+    E' l'elenco che risponde a "che cosa esco a mettere fuori questa settimana",
+    e non inventa regole nuove: usa le stesse degli altri.
+
+    - La finestra copre `giorni` date a partire da OGGI, l'ultima compresa.
+    - Una sera gia' chiusa non c'e' piu', anche se e' quella di oggi.
+    - Una sera ancora aperta c'e' anche se e' quella di IERI - dove la finestra
+      scavalca la mezzanotte quel sacco va ancora messo fuori. E' l'unico motivo
+      per cui la lista puo' cominciare prima di oggi.
+    - Di ogni sera restano le sole frazioni non scadute, esattamente come nel
+      sensore di stasera.
+
+    Quando la lista non e' vuota il suo primo elemento e' `giorno_in_corso`, con
+    le sole frazioni ancora aperte: il filtro e' lo stesso, perche' `solo_aperti`
+    ritorna None esattamente quando `chiusura` e' gia' passata. Se il primo
+    giorno non chiuso cade oltre la finestra, la lista e' vuota.
+    """
+    if calendario is None or giorni < 1:
+        return []
+    limite = adesso.date() + timedelta(days=giorni - 1)
+    return [
+        aperto
+        for giorno in calendario.giorni
+        if giorno.giorno <= limite
+        and (aperto := solo_aperti(giorno, adesso)) is not None
+    ]
 
 
 def giorno_in_corso(

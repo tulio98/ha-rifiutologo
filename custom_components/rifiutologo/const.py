@@ -27,6 +27,13 @@ DEFAULT_GIORNI_DA_MOSTRARE: Final = 365
 MIN_GIORNI_DA_MOSTRARE: Final = 30
 MAX_GIORNI_DA_MOSTRARE: Final = 365
 
+# Quanto dura la "settimana" del sensore di riepilogo: oggi piu' i sei giorni
+# seguenti. Sette e non otto perche' e' il numero che la gente ha in testa
+# quando chiede "cosa esce questa settimana", e perche' e' l'ampiezza con cui
+# il gestore stesso stampa il calendario cartaceo. Non e' un'opzione: chi vuole
+# guardare piu' lontano ha il calendario, che arriva fino a un anno.
+GIORNI_SETTIMANA: Final = 7
+
 # Il calendario di un gestore di rifiuti cambia qualche volta l'anno: le ore sono
 # l'ordine di grandezza giusto per il polling, non i minuti.
 UPDATE_INTERVAL_HOURS: Final = 12

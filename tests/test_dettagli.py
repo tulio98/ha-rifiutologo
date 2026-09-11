@@ -195,10 +195,31 @@ async def test_uno_scarico_identico_non_riscrive_lo_stato(
     await _avvia(hass, voce)
     prima = _stato(hass, voce, "sensor", "esposizione_stasera").last_updated
 
-    freezer.tick(timedelta(hours=UPDATE_INTERVAL_HOURS + 1))
-    async_fire_time_changed(hass)
-    await hass.async_block_till_done()
+    # Il coordinator si richiama a mano, con l'orologio fermo. Saltare avanti
+    # dodici ore misurerebbe due cose insieme: `always_update`, che e' quella in
+    # esame, e i confini di giornata, che in dodici ore si attraversano per
+    # forza - e alle sette del mattino dopo il sensore vale davvero "nessuna",
+    # quindi riscriverlo li' e' giusto, non un difetto. Prima questo test
+    # passava solo finche' il risveglio programmato non faceva in tempo a
+    # scattare, ed e' bastata un'entita' in piu' per rovesciarlo.
+    # Il conteggio vero e' questo, e non `last_updated`: Home Assistant scarta
+    # da solo una riscrittura identica, quindi la data di aggiornamento non
+    # cambia nemmeno con `always_update=True` e non puo' accorgersi di niente.
+    # Qui si guarda piu' a monte, se le entita' sono state AVVISATE.
+    avvisi = 0
 
+    @callback
+    def _conta() -> None:
+        nonlocal avvisi
+        avvisi += 1
+
+    disdici = voce.runtime_data.async_add_listener(_conta)
+    await voce.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    disdici()
+
+    assert voce.runtime_data.last_update_success, "il secondo scarico e' andato"
+    assert avvisi == 0, "calendario identico: nessuna entita' andava avvisata"
     assert _stato(hass, voce, "sensor", "esposizione_stasera").last_updated == prima
 
 

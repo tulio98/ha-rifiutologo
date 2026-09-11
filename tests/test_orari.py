@@ -16,6 +16,7 @@ import pytest
 from custom_components.rifiutologo import api
 from custom_components.rifiutologo.calendar import costruisci_eventi
 from custom_components.rifiutologo.orari import (
+    agenda,
     apertura,
     chiusura,
     giorno_in_corso,
@@ -504,3 +505,176 @@ async def test_scadenza_e_chiusura_usano_lo_stesso_metro() -> None:
         for giorno in calendario.giorni:
             attesa = max(scadenza(giorno, c) for c in giorno.conferimenti)
             assert chiusura(giorno) == attesa, nome
+
+
+# --- l'agenda della settimana --------------------------------------------------
+
+TUTTI_I_COMUNI = (
+    "calendario",
+    "calendario_bologna",
+    "calendario_faenza",
+    "calendario_modena",
+    "calendario_gradara",
+)
+
+
+@pytest.mark.parametrize(
+    ("nome", "quando", "atteso", "perche"),
+    [
+        (
+            "calendario",
+            datetime(2026, 9, 3, 18, 0, tzinfo=ROMA),
+            ["2026-09-03", "2026-09-06", "2026-09-08", "2026-09-09"],
+            "Padova: la finestra copre dal 3 al 9 compresi",
+        ),
+        (
+            "calendario",
+            datetime(2026, 9, 3, 23, 0, tzinfo=ROMA),
+            ["2026-09-03", "2026-09-06", "2026-09-08", "2026-09-09"],
+            "alle 23:00 la sera di oggi e' ancora aperta, l'elenco non cambia",
+        ),
+        (
+            "calendario",
+            datetime(2026, 9, 4, 0, 30, tzinfo=ROMA),
+            ["2026-09-06", "2026-09-08", "2026-09-09", "2026-09-10"],
+            "passata la mezzanotte il 3 e' chiuso e in fondo entra il 10",
+        ),
+        (
+            "calendario_modena",
+            datetime(2026, 9, 3, 12, 0, tzinfo=ROMA),
+            ["2026-09-04", "2026-09-05", "2026-09-07", "2026-09-08", "2026-09-09"],
+            "Modena espone dalle 00:00 alle 07:00: a mezzogiorno oggi e' gia' andato",
+        ),
+        (
+            "calendario_bologna",
+            datetime(2026, 9, 4, 2, 0, tzinfo=ROMA),
+            [
+                "2026-09-03",
+                "2026-09-06",
+                "2026-09-07",
+                "2026-09-08",
+                "2026-09-09",
+                "2026-09-10",
+            ],
+            "Bologna chiude alle 06:00: alle due di notte la sera di IERI e' in cima",
+        ),
+        (
+            "calendario_faenza",
+            datetime(2026, 9, 3, 18, 0, tzinfo=ROMA),
+            ["2026-09-03", "2026-09-05", "2026-09-07", "2026-09-08"],
+            "Faenza dichiara un termine, non una finestra: vale fino a mezzanotte",
+        ),
+    ],
+)
+async def test_agenda_della_settimana(
+    nome: str, quando: datetime, atteso: list[str], perche: str
+) -> None:
+    """Sette giorni, con le regole della finestra e non con quelle del calendario."""
+    calendario = _calendario(nome)
+    giorni = agenda(calendario, quando, 7)
+    assert [g.giorno.isoformat() for g in giorni] == atteso, perche
+
+
+async def test_agenda_tiene_solo_le_frazioni_ancora_aperte() -> None:
+    """A Gradara, fra le 23:00 e le 06:00, della sera resta solo l'Organico.
+
+    E' lo stesso taglio che fa il sensore di stasera: se l'agenda non lo
+    facesse, il riepilogo della settimana direbbe di esporre una frazione che
+    il sensore ha gia' tolto dall'elenco.
+    """
+    calendario = _calendario("calendario_gradara")
+    giorni = agenda(calendario, datetime(2026, 9, 8, 23, 30, tzinfo=ROMA), 7)
+    assert [g.giorno.isoformat() for g in giorni] == [
+        "2026-09-08",
+        "2026-09-09",
+        "2026-09-10",
+        "2026-09-11",
+    ]
+    assert giorni[0].frazioni == ["Organico"], "l'Indifferenziato e' scaduto alle 23:00"
+    assert len(calendario.del_giorno(date(2026, 9, 8)).conferimenti) == 2, (
+        "il calendario di partenza non e' stato toccato"
+    )
+
+
+@pytest.mark.parametrize("nome", TUTTI_I_COMUNI)
+async def test_agenda_non_puo_contraddire_gli_altri(nome: str) -> None:
+    """La prima voce dell'agenda e' `giorno_in_corso`, ora per ora, ovunque.
+
+    E' l'invariante che tiene insieme le due entita': il riepilogo della
+    settimana e il sensore di stasera guardano lo stesso elenco, e la prima
+    sera dell'uno deve essere la sera dell'altro. Qui si controlla ogni ora di
+    dieci giorni, su tutti e cinque i modi in cui i comuni scrivono l'orario.
+    """
+    calendario = _calendario(nome)
+    inizio = datetime(2026, 9, 2, 0, 0, tzinfo=ROMA)
+    for ora in range(10 * 24):
+        adesso = inizio + timedelta(hours=ora)
+        giorni = agenda(calendario, adesso, 7)
+        in_corso = giorno_in_corso(calendario, adesso)
+
+        if giorni:
+            assert in_corso is not None, (
+                f"{nome} {adesso}: agenda piena, niente in corso"
+            )
+            assert giorni[0].giorno == in_corso.giorno, f"{nome} {adesso}"
+            assert giorni[0].frazioni == solo_aperti(in_corso, adesso).frazioni, (
+                f"{nome} {adesso}: le frazioni della prima sera non coincidono"
+            )
+        else:
+            # Vuota solo per un motivo: non c'e' niente di aperto dentro
+            # la finestra. Mai perche' l'ha saltato.
+            oltre = adesso.date() + timedelta(days=6)
+            assert in_corso is None or in_corso.giorno > oltre, (
+                f"{nome} {adesso}: agenda vuota ma c'e' una sera aperta in finestra"
+            )
+
+        # E la prossima raccolta, quando cade in finestra, e' la prima voce
+        # dell'agenda che non sta nel passato.
+        prossima = prossima_raccolta(calendario, adesso)
+        da_oggi = [g for g in giorni if g.giorno >= adesso.date()]
+        if da_oggi:
+            assert prossima is not None and prossima.giorno == da_oggi[0].giorno, (
+                f"{nome} {adesso}"
+            )
+
+
+@pytest.mark.parametrize("nome", TUTTI_I_COMUNI)
+async def test_agenda_e_ordinata_e_senza_doppioni(nome: str) -> None:
+    """Un elenco che salta indietro o ripete una data non si puo' disegnare."""
+    calendario = _calendario(nome)
+    giorni = agenda(calendario, datetime(2026, 9, 3, 12, 0, tzinfo=ROMA), 7)
+    date_ = [g.giorno for g in giorni]
+    assert date_ == sorted(date_)
+    assert len(date_) == len(set(date_))
+
+
+async def test_agenda_senza_dati_e_senza_finestra() -> None:
+    """Senza calendario, o con una finestra vuota di giorni, la lista e' vuota."""
+    calendario = _calendario("calendario")
+    quando = datetime(2026, 9, 3, 18, 0, tzinfo=ROMA)
+    assert agenda(None, quando, 7) == []
+    assert agenda(calendario, quando, 0) == []
+    assert agenda(calendario, quando, -1) == []
+    assert agenda(api.Calendario(nota="", giorni=(), allegati=()), quando, 7) == []
+    assert [g.giorno.isoformat() for g in agenda(calendario, quando, 1)] == [
+        "2026-09-03"
+    ], "un giorno solo e' oggi e basta"
+
+    # Zero giorni non e' "oggi", e' nessun giorno - e va detto esplicitamente.
+    # Senza il guardiano il limite cadrebbe IERI, e a Bologna alle due di notte
+    # una finestra vuota pescherebbe la sera di ieri ancora aperta: l'unico
+    # posto in cui la differenza si vede.
+    bologna = _calendario("calendario_bologna")
+    notte = datetime(2026, 9, 4, 2, 0, tzinfo=ROMA)
+    assert [g.giorno.isoformat() for g in agenda(bologna, notte, 1)] == [
+        "2026-09-03"
+    ], "anche in una finestra di un giorno la sera di ieri aperta c'e'"
+    assert agenda(bologna, notte, 0) == []
+
+
+async def test_agenda_di_un_anno_arriva_in_fondo() -> None:
+    """Con una finestra larga l'agenda e' tutto il calendario ancora da fare."""
+    calendario = _calendario("calendario")
+    quando = datetime(2026, 9, 3, 18, 0, tzinfo=ROMA)
+    giorni = agenda(calendario, quando, 365)
+    assert len(giorni) == len(calendario.giorni), "nessuna sera e' andata persa"

@@ -7,15 +7,20 @@ sulle entita' e sugli attributi vengono confrontate con il codice.
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import pathlib
 import re
+from zoneinfo import ZoneInfo
 
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 import yaml
 
+from custom_components.rifiutologo.const import DOMAIN
 from homeassistant.components.automation import config as validazione_automazioni
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.template import Template
 
 RADICE = pathlib.Path(__file__).resolve().parents[1]
@@ -162,3 +167,37 @@ def test_gli_attributi_promessi_esistono() -> None:
     assert prodotti, "il controllo non sta leggendo attributi_giorno"
     for attributo in prodotti:
         assert f"`{attributo}`" in README, f"attributo non documentato: {attributo}"
+
+
+async def test_la_card_della_settimana_si_disegna(
+    hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
+) -> None:
+    """Il template della settimana va RESO con dati veri, non solo compilato.
+
+    `ensure_valid` dice che la sintassi sta in piedi; non dice che
+    `giorno_settimana` esista davvero fra gli attributi. Se un attributo cambia
+    nome, la card del README diventa una tabella di vuoti e nessun altro
+    controllo se ne accorge.
+    """
+    freezer.move_to(datetime(2026, 9, 3, 18, 0, tzinfo=ZoneInfo("Europe/Rome")))
+    await hass.config.async_set_time_zone("Europe/Rome")
+    voce.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{voce.entry_id}_settimana"
+    )
+    assert entity_id is not None
+
+    blocco = next(b for b in _blocchi("yaml") if "raccolte_in_settimana" in b)
+    contenuto = yaml.safe_load(blocco)["content"].replace(
+        "sensor.CAMBIAMI_raccolte_in_settimana", entity_id
+    )
+    reso = Template(contenuto, hass).async_render(parse_result=False)
+
+    assert "Da qui a domenica: 4 sere" in reso
+    assert "**gio 03**" in reso, f"il giorno non e' stato reso:\n{reso}"
+    assert "**dom 06**" in reso
+    assert "Indifferenziato, Organico" in reso
+    assert "Undefined" not in reso, f"un attributo non esiste piu':\n{reso}"
