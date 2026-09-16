@@ -43,7 +43,7 @@ Per ogni indirizzo configurato nasce un dispositivo con queste entità:
 | **Prossima raccolta** (`sensor`) | Data della prossima raccolta, da oggi in avanti | Card e template |
 | **Prossima esposizione** (`sensor`) | Istante in cui si apre la sua finestra | `device_class: timestamp`, si legge come «fra 3 ore» |
 | **Giorni alla prossima** (`sensor`) | `0` vuol dire stasera | Soglie e colori |
-| **Raccolte in settimana** (`sensor`) | Quante sere si esce da qui a sette giorni, con l'elenco completo negli attributi | Il riepilogo settimanale, in una card sola |
+| **Raccolte in settimana** (`sensor`) | Quante sere si esce da qui a sette giorni; l'elenco completo è negli attributi | Soglie e template. **Il calendario da guardare è la card `calendar`**, [qui sotto](#in-dashboard) |
 | **Zona di raccolta** (`sensor`) | `Calendario Padova Q6 2026` | Controllare di aver preso il calendario giusto (disattivata di serie) |
 
 > **Gli `entity_id` dipendono dalla lingua di Home Assistant**, perché li genera lui dal nome
@@ -74,6 +74,12 @@ Le entità che descrivono **una sera di raccolta** — *Raccolta stasera*, *Da e
 
 **Raccolte in settimana** risponde alla domanda «quante volte esco da qui a domenica».
 Lo stato conta le **sere**, non i bidoni: due frazioni la stessa sera fanno uno.
+
+> **Se quello che cerchi è vedere la settimana, non è qui.** Da Home Assistant 2026 la
+> schermata che si apre cliccando un'entità non mostra **nessun** attributo: stanno
+> dietro **⋮ → Dettagli**, e quel menù compare solo agli amministratori. Gli attributi
+> qui sotto sono il canale per **template, automazioni e card** — per gli occhi c'è la
+> [card `calendar` in vista settimanale](#in-dashboard), che è fatta apposta.
 
 | Attributo | Contenuto |
 |---|---|
@@ -398,7 +404,70 @@ cards:
       - calendar.CAMBIAMI_raccolta
 ```
 
-E la settimana in una card sola, senza plugin e senza helper:
+### Il calendario della settimana
+
+È la card qui sopra, e vale la pena isolarla perché è **la** risposta alla domanda
+«che cosa si raccoglie questa settimana»:
+
+```yaml
+type: calendar
+title: Raccolte in settimana
+initial_view: listWeek
+entities:
+  - calendar.CAMBIAMI_raccolta
+```
+
+```text
+venerdì                                    11 settembre 2026
+  19:00 - 00:00   ●  Organico
+domenica                                   13 settembre 2026
+  19:00 - 00:00   ●  Lattine
+  19:00 - 00:00   ●  Imballaggi in plastica
+mercoledì                                  16 settembre 2026
+  19:00 - 00:00   ●  Indifferenziato
+  19:00 - 00:00   ●  Organico
+```
+
+I giorni senza raccolta non compaiono, i nomi dei giorni sono nella **lingua di Home
+Assistant**, e toccando una riga si apre il dettaglio con l'orario di esposizione.
+
+Quattro cose che si vedono solo sul vetro:
+
+- **Senza `initial_view: listWeek` esce il mese**, che è il valore di serie della card.
+- **Dal telefono non serve nemmeno la card**: il pannello **Calendario** in barra
+  laterale apre già in vista settimanale quando lo schermo è stretto.
+- **La finestra della card è la stessa del sensore** — da oggi a oggi + 7 — quindi le
+  due non possono raccontare settimane diverse ai bordi. Non è un'opzione della card:
+  Home Assistant ridefinisce `listWeek` come «lista di 7 giorni a partire da oggi».
+- **La card non sa che una sera è scaduta.** Dove la finestra finisce prima di
+  mezzanotte — Modena espone dalle 00:00 alle 07:00 — dalle sette a mezzanotte la riga
+  resta lì mentre il sensore l'ha già tolta. In quel caso **ha ragione il sensore**:
+  tienigli accanto *Da esporre stasera*.
+
+Vuoi ogni riga **col colore ufficiale** del gestore? Accendi «Un calendario per ogni
+frazione» nelle opzioni ed elenca quelli, **senza** il calendario complessivo — se
+metti tutti e due, ogni riga compare due volte:
+
+```yaml
+type: calendar
+title: Raccolte in settimana
+initial_view: listWeek
+entities:
+  - calendar.CAMBIAMI_organico
+  - calendar.CAMBIAMI_indifferenziato
+  - calendar.CAMBIAMI_carta
+  - calendar.CAMBIAMI_lattine
+  - calendar.CAMBIAMI_imballaggi_in_plastica
+  - calendar.CAMBIAMI_imballaggi_in_vetro
+```
+
+> Il colore si scrive alla **prima creazione** dell'entità. Chi aveva già i calendari
+> per frazione da una versione precedente non li vede ricolorare da soli: si cambia a
+> mano nelle impostazioni dell'entità, oppure si spegne e si riaccende l'opzione.
+
+### E la stessa settimana come testo
+
+Se preferisci una card di testo, senza plugin e senza helper:
 
 ```yaml
 type: markdown

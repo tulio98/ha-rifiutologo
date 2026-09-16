@@ -1447,3 +1447,43 @@ async def test_il_calendario_mostra_solo_le_frazioni_ancora_aperte(
 
     calendario = _stato(hass, voce, "sensor", "settimana").attributes["calendario"]
     assert calendario["mar 08/09"] == "Organico"
+
+
+async def test_il_colore_ufficiale_arriva_fino_al_registro(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Il colore non serve a niente se non esce dall'integrazione.
+
+    E' il canale che colora le righe della card `calendar`: `_attr_initial_color`
+    viene letto UNA volta alla creazione dell'entita', validato da Home Assistant
+    con `cv.color_hex` e scritto nelle opzioni del registro. Se la validazione lo
+    respinge - come faceva con un esadecimale a tre cifre - il colore sparisce
+    senza un errore, e finora nessun test guardava qui.
+    """
+    registra(aioclient_mock)
+    freezer.move_to(SERA_DI_RACCOLTA)
+    voce.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        voce, options={CONF_CALENDARI_PER_FRAZIONE: True}
+    )
+    await hass.config.async_set_time_zone("Europe/Rome")
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    registro = er.async_get(hass)
+    chiavi = coordinator_chiavi(hass, voce)
+    attesi = {
+        "Organico": "#701100",
+        "Indifferenziato": "#7C7C81",
+        "Carta": "#0093D0",
+        "Imballaggi in vetro": "#15A53F",
+    }
+    for frazione, colore in attesi.items():
+        entity_id = registro.async_get_entity_id(
+            "calendar", DOMAIN, f"{voce.entry_id}_calendario_{chiavi[frazione]}"
+        )
+        assert entity_id is not None, frazione
+        opzioni = registro.async_get(entity_id).options
+        assert opzioni == {"calendar": {"color": colore}}, (
+            f"{frazione}: il colore non e' arrivato al registro ({opzioni})"
+        )

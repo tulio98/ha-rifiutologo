@@ -18,6 +18,7 @@ from custom_components.rifiutologo.api import (
     _testo,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .conftest import CIVICO_ID, COMUNE_ID, VIA_ID, carica, registra
@@ -48,7 +49,11 @@ def test_minuti(grezzo: str | None, atteso: int | None) -> None:
     [
         ("701100", "#701100"),
         ("#0093d0", "#0093D0"),
-        ("abc", "#ABC"),
+        # La forma corta si raddoppia come nel CSS: Home Assistant valida il
+        # colore con ^#[0-9A-F]{6}$, e un "#ABC" verrebbe scartato in silenzio
+        # lasciando il calendario senza il colore ufficiale del gestore.
+        ("abc", "#AABBCC"),
+        ("#0F8", "#00FF88"),
         ("zzzzzz", None),
         ("70110", None),
         (None, None),
@@ -243,3 +248,34 @@ async def test_finestre_dei_tre_comuni(hass: HomeAssistant, aioclient_mock) -> N
         assert conferimento.ora_inizio == inizio, nome
         assert conferimento.ora_fine == fine, nome
         assert conferimento.fine_minuti_effettiva == effettiva, nome
+
+
+def test_ogni_colore_passa_il_validatore_di_home_assistant() -> None:
+    """Quello che `_colore` produce deve essere accettato a valle, sempre.
+
+    E' la prova che chiude il difetto per davvero: non basta che la stringa
+    sembri un colore, deve passare `cv.color_hex`, che e' chi decide se il
+    calendario per frazione nasce colorato o grigio. Prima, una forma a tre
+    cifre veniva scartata li' senza un errore.
+    """
+    for grezzo in ("701100", "#0093d0", "abc", "#0F8", "FDB913", "#15a53f"):
+        colore = _colore(grezzo)
+        assert colore is not None, grezzo
+        assert cv.color_hex(colore) == colore, f"{grezzo} -> {colore} respinto"
+
+    # E tutti i colori veri che il gestore manda, nelle cinque fixture.
+    visti = 0
+    for nome in (
+        "calendario",
+        "calendario_bologna",
+        "calendario_faenza",
+        "calendario_modena",
+        "calendario_gradara",
+    ):
+        for voce in carica(nome)["calendario"]:
+            for conferimento in voce["conferimenti"]:
+                grezzo = conferimento["macroprodotto"]["pittogramma"]["colore"]
+                if (colore := _colore(grezzo)) is not None:
+                    visti += 1
+                    assert cv.color_hex(colore) == colore, f"{nome}: {grezzo}"
+    assert visti > 0, "il controllo non sta leggendo nessun colore"

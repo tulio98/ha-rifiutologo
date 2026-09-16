@@ -48,6 +48,12 @@ ORA_MASSIMA: Final = 24
 
 MINUTO_MASSIMO: Final = 59
 MINUTI_IN_UN_GIORNO: Final = 24 * 60
+
+# Un esadecimale della forma "ABC", che vale "AABBCC" come nel CSS...
+CIFRE_COLORE_CORTO: Final = 3
+# ...e la forma lunga, l'unica che Home Assistant accetta: il suo
+# validatore `cv.color_hex` vuole esattamente ^#[0-9A-F]{6}$.
+CIFRE_COLORE: Final = 6
 LUNGHEZZA_DATA_ISO: Final = 10
 
 
@@ -360,14 +366,28 @@ def _minuti(valore: str | None) -> int | None:
 
 
 def _colore(grezzo: Any) -> str | None:
-    """Normalizza "701100" in "#701100". Scarta tutto cio' che non e' un esadecimale."""
+    """Normalizza "701100" in "#701100". Scarta tutto cio' che non e' un esadecimale.
+
+    La forma corta di tre cifre viene RADDOPPIATA, "ABC" -> "AABBCC", che e' la
+    stessa espansione del CSS e non un'invenzione. Serve perche' a valle il
+    colore lo valida Home Assistant con `cv.color_hex`, il cui schema e'
+    `^#[0-9A-F]{6}$` (helpers/config_validation.py): un "#ABC" non lo passa, e
+    `CalendarEntity.get_initial_entity_options` in quel caso ritorna None senza
+    dire niente - cioe' il colore ufficiale del gestore sparirebbe dal
+    calendario in silenzio.
+
+    Oggi Hera manda sempre sei cifre (verificato su tutte e cinque le fixture),
+    quindi e' un difetto latente e non un caso vivo: costa una riga chiuderlo.
+    """
     if not isinstance(grezzo, str):
         return None
     pulito = grezzo.strip().lstrip("#")
-    if len(pulito) not in (3, 6) or not all(
+    if len(pulito) not in (CIFRE_COLORE_CORTO, CIFRE_COLORE) or not all(
         c in "0123456789abcdefABCDEF" for c in pulito
     ):
         return None
+    if len(pulito) == CIFRE_COLORE_CORTO:
+        pulito = "".join(c * 2 for c in pulito)
     return f"#{pulito.upper()}"
 
 
