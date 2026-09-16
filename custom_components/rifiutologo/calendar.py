@@ -28,7 +28,7 @@ from .const import (
 )
 from .coordinator import RifiutologoConfigEntry, RifiutologoCoordinator
 from .entity import RifiutologoEntity, collega_per_frazione
-from .orari import istante
+from .orari import apertura_conferimento, scadenza
 
 
 async def async_setup_entry(
@@ -172,12 +172,20 @@ def costruisci_eventi(
     Padova dalle 20:00 alle 24:00, a Bologna dalle 20:00 alle 06:00 del mattino
     dopo.
 
-    Restano giornalieri due casi, e per lo stesso motivo: il gestore non
-    dichiara nessuna finestra. Succede quando mancano gli orari, e quando
-    oraInizio coincide con oraFine, che a Faenza vuol dire "entro le 04:00" e
-    altrove "dalle 20:00" - una scadenza o un'apertura, non una durata. In
-    entrambi i casi la frase esatta del gestore finisce nella descrizione
-    dell'evento, che e' meglio di una durata inventata.
+    Resta giornaliero un caso solo: quando il gestore non dichiara NIENTE, ne'
+    un'apertura ne' una chiusura. Allora la frase esatta del gestore finisce
+    nella descrizione, che e' meglio di una durata inventata.
+
+    Gli istanti li danno `apertura_conferimento` e `scadenza`, che sono gli
+    stessi che usano i binary sensor: non si rifa' il conto qui. Prima si
+    ricostruiva la finestra a mano da `inizio_minuti` e `fine_minuti_effettiva`,
+    e i due metri coincidevano ovunque tranne in una forma - "dalle 20:00"
+    senza chiusura, di cui il backend ha 1382 conferimenti censiti: li'
+    `apertura_dichiarata` dava le 20:00 ma `fine_minuti_effettiva` dava None, e
+    l'evento degenerava in giornaliero. Misurato: venti ore al giorno in cui il
+    calendario diceva "c'e' un evento" mentre la finestra era ancora chiusa. Ora
+    il disaccordo e' zero in tutte e cinque le forme in cui il gestore scrive
+    l'orario, e non perche' lo dicono le fixture: perche' e' lo stesso conto.
     """
     eventi: list[CalendarEvent] = []
 
@@ -186,14 +194,27 @@ def costruisci_eventi(
             if solo_frazione is not None and conferimento.frazione != solo_frazione:
                 continue
 
-            inizio_minuti = conferimento.inizio_minuti
-            fine_minuti = conferimento.fine_minuti_effettiva
             inizio: dt.date | dt.datetime
             fine: dt.date | dt.datetime
 
-            if con_orario and inizio_minuti is not None and fine_minuti is not None:
-                inizio = istante(giorno.giorno, inizio_minuti)
-                fine = istante(giorno.giorno, fine_minuti)
+            dichiarato = (
+                conferimento.apertura_dichiarata is not None
+                or conferimento.fine_minuti_effettiva is not None
+            )
+            apre = apertura_conferimento(giorno, conferimento)
+            chiude = scadenza(giorno, conferimento)
+
+            # `chiude > apre` oggi e' sempre vero quando c'e' qualcosa di
+            # dichiarato, e lo e' per una garanzia che sta in un ALTRO file:
+            # `apertura_dichiarata` rifiuta un inizio a "24:00", che e' l'unico
+            # modo di far coincidere apertura e scadenza. La guardia resta
+            # perche' la garanzia non e' locale: se un domani quella riga
+            # cambiasse, senza questa qui nascerebbe un evento di durata zero,
+            # e un evento di durata zero non si vede e non si spiega. Il banco
+            # mutazionale la segnala come equivalente, ed e' corretto che lo
+            # faccia: e' una rete, non una regola.
+            if con_orario and dichiarato and chiude > apre:
+                inizio, fine = apre, chiude
             else:
                 # Evento giornaliero: start ed end devono essere entrambi date,
                 # mai un misto di date e datetime, o la validazione respinge.

@@ -790,3 +790,82 @@ async def test_il_confine_conosce_ogni_singola_apertura() -> None:
     assert prossimo_confine(calendario, istante(sera.giorno, 22 * 60)) == istante(
         sera.giorno, 24 * 60
     ), "e infine la chiusura, che coincide con la mezzanotte"
+
+
+# --- il calendario e la finestra devono dire la stessa cosa -------------------
+
+
+FORME_DEL_GESTORE = (
+    ("Padova: finestra regolare", "19:00", "24:00", "dalle 19:00 alle 24:00"),
+    ("Bologna: scavalca la mezzanotte", "20:00", "06:00", "dalle 20:00 alle 06:00"),
+    ("Faenza: un termine", "04:00", "04:00", "entro le 04:00"),
+    ("apertura senza chiusura", "20:00", "20:00", "dalle 20:00"),
+    ("niente orario", None, None, None),
+    ("apertura a fine giornata", "24:00", "24:00", "dalle 24:00"),
+)
+
+
+def _sera_con(inizio: str | None, fine: str | None, testo: str | None, quando: date):
+    """Una sera con un solo conferimento, scritto come lo scrive il gestore."""
+    return api.GiornoRaccolta(
+        giorno=quando,
+        conferimenti=(
+            api.Conferimento(
+                frazione="Prova",
+                macroprodotto_id=1,
+                colore=None,
+                ora_inizio=inizio,
+                ora_fine=fine,
+                orario=testo,
+                orario_raccolta=None,
+                straordinario=False,
+                note=None,
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize(("etichetta", "inizio", "fine", "testo"), FORME_DEL_GESTORE)
+async def test_l_evento_del_calendario_e_la_finestra_di_esposizione(
+    etichetta: str, inizio: str | None, fine: str | None, testo: str | None
+) -> None:
+    """Un evento in corso e una finestra aperta devono essere lo stesso momento.
+
+    Sono due entita' diverse della stessa integrazione che rispondono alla
+    stessa domanda: se dissentono, una delle due mente a chi guarda.
+
+    Dissentivano davvero, in una forma sola: "dalle 20:00" senza chiusura - di
+    cui il backend ha 1382 conferimenti censiti, e di cui nessuna fixture ha un
+    esempio. Li' `apertura_dichiarata` dava le 20:00 ma `fine_minuti_effettiva`
+    dava None, e il calendario ripiegava sull'evento giornaliero: venti ore al
+    giorno in cui segnava un evento mentre la finestra era chiusa.
+
+    Si confronta minuto per minuto, non a campione, perche' il difetto stava
+    proprio nelle ore in cui nessuno guarda.
+    """
+    giorni = tuple(
+        _sera_con(inizio, fine, testo, date(2026, 9, 3) + timedelta(days=g * 3))
+        for g in range(3)
+    )
+    calendario = api.Calendario(nota="", giorni=giorni, allegati=())
+    eventi = costruisci_eventi(
+        calendario, con_orario=True, indirizzo="prova", prefisso_uid="u"
+    )
+
+    partenza = datetime(2026, 9, 2, 0, 0, tzinfo=ROMA)
+    disaccordi = 0
+    aperti = 0
+    for minuto in range(10 * 24 * 60):
+        adesso = partenza + timedelta(minutes=minuto)
+        finestra = solo_in_finestra(giorno_in_corso(calendario, adesso), adesso)
+        in_evento = any(
+            e.start_datetime_local <= adesso < e.end_datetime_local for e in eventi
+        )
+        aperti += finestra is not None
+        disaccordi += (finestra is not None) != in_evento
+
+    assert aperti > 0, f"{etichetta}: la finestra non si apre mai, prova inutile"
+    assert disaccordi == 0, (
+        f"{etichetta}: calendario e finestra dissentono per "
+        f"{disaccordi // 60} ore su dieci giorni"
+    )

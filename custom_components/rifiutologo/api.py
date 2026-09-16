@@ -138,8 +138,16 @@ class Conferimento:
 
         Se il testo non dice ne' l'una ne' l'altra cosa si ammette di non
         sapere, invece di indovinare.
+
+        Un inizio dichiarato a "24:00" non e' un inizio: sono i 1440 minuti del
+        giorno, cioe' il momento in cui il giorno finisce. Il gestore quel
+        valore lo usa solo come FINE ("dalle 20:00 alle 24:00"), mai come
+        inizio; se un giorno lo usasse come inizio, prenderlo alla lettera
+        darebbe una finestra che si apre quando la sua scadenza e' gia' passata,
+        cioe' un'entita' che non si accende mai mentre il calendario segna quel
+        giorno. Meglio dire di non sapere.
         """
-        if self.inizio_minuti is None:
+        if self.inizio_minuti is None or self.inizio_minuti >= MINUTI_IN_UN_GIORNO:
             return None
         if self.fine_minuti_effettiva is not None:
             return self.inizio_minuti
