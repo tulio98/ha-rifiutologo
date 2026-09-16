@@ -166,9 +166,7 @@ async def test_prossimo_confine() -> None:
 async def test_eventi_bologna_hanno_orario() -> None:
     """A Bologna gli eventi con orario devono esistere davvero, non degradare."""
     calendario = _calendario("calendario_bologna")
-    eventi = costruisci_eventi(
-        calendario, con_orario=True, indirizzo="x", prefisso_uid="p"
-    )
+    eventi = costruisci_eventi(calendario, indirizzo="x", prefisso_uid="p")
     assert eventi, "nessun evento costruito"
     assert all(not e.all_day for e in eventi), "sono degradati a giornalieri"
     primo = eventi[0]
@@ -185,9 +183,7 @@ async def test_eventi_faenza_restano_giornalieri() -> None:
     di una durata di 24 ore inventata.
     """
     calendario = _calendario("calendario_faenza")
-    eventi = costruisci_eventi(
-        calendario, con_orario=True, indirizzo="x", prefisso_uid="p"
-    )
+    eventi = costruisci_eventi(calendario, indirizzo="x", prefisso_uid="p")
     assert eventi
     assert all(e.all_day for e in eventi)
     assert "entro le 04:00" in eventi[0].description
@@ -196,9 +192,7 @@ async def test_eventi_faenza_restano_giornalieri() -> None:
 async def test_eventi_padova_invariati() -> None:
     """La correzione non deve cambiare il caso che gia' funzionava."""
     calendario = _calendario("calendario")
-    eventi = costruisci_eventi(
-        calendario, con_orario=True, indirizzo="x", prefisso_uid="p"
-    )
+    eventi = costruisci_eventi(calendario, indirizzo="x", prefisso_uid="p")
     primo = eventi[0]
     assert not primo.all_day
     assert primo.start == datetime(2026, 9, 3, 20, 0, tzinfo=ROMA)
@@ -848,9 +842,7 @@ async def test_l_evento_del_calendario_e_la_finestra_di_esposizione(
         for g in range(3)
     )
     calendario = api.Calendario(nota="", giorni=giorni, allegati=())
-    eventi = costruisci_eventi(
-        calendario, con_orario=True, indirizzo="prova", prefisso_uid="u"
-    )
+    eventi = costruisci_eventi(calendario, indirizzo="prova", prefisso_uid="u")
 
     partenza = datetime(2026, 9, 2, 0, 0, tzinfo=ROMA)
     disaccordi = 0

@@ -48,13 +48,11 @@ from .const import (
     CONF_CIVICO_NUMERO,
     CONF_COMUNE_ID,
     CONF_COMUNE_NOME,
-    CONF_EVENTI_CON_ORARIO,
     CONF_GIORNI_DA_MOSTRARE,
     CONF_SENSORI_PER_FRAZIONE,
     CONF_VIA_ID,
     CONF_VIA_NOME,
     DEFAULT_CALENDARI_PER_FRAZIONE,
-    DEFAULT_EVENTI_CON_ORARIO,
     DEFAULT_GIORNI_DA_MOSTRARE,
     DEFAULT_SENSORI_PER_FRAZIONE,
     DOMAIN,
@@ -284,7 +282,6 @@ class RifiutologoOptionsFlow(OptionsFlowWithReload):
         if user_input is not None:
             return self.async_create_entry(
                 data={
-                    CONF_EVENTI_CON_ORARIO: user_input[CONF_EVENTI_CON_ORARIO],
                     CONF_CALENDARI_PER_FRAZIONE: user_input[
                         CONF_CALENDARI_PER_FRAZIONE
                     ],
@@ -298,12 +295,6 @@ class RifiutologoOptionsFlow(OptionsFlowWithReload):
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    vol.Required(
-                        CONF_EVENTI_CON_ORARIO,
-                        default=attuali.get(
-                            CONF_EVENTI_CON_ORARIO, DEFAULT_EVENTI_CON_ORARIO
-                        ),
-                    ): BooleanSelector(),
                     vol.Required(
                         CONF_CALENDARI_PER_FRAZIONE,
                         default=attuali.get(

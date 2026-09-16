@@ -17,7 +17,6 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.rifiutologo.api import BASE_URL
 from custom_components.rifiutologo.const import (
     CONF_CALENDARI_PER_FRAZIONE,
-    CONF_EVENTI_CON_ORARIO,
     CONF_GIORNI_DA_MOSTRARE,
     CONF_SENSORI_PER_FRAZIONE,
     DOMAIN,
@@ -201,25 +200,6 @@ async def test_calendario_con_orario(
         "Organico",
         "Carta",
     ]
-
-
-async def test_calendario_giornaliero(
-    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
-) -> None:
-    """Spegnendo l'opzione, gli eventi tornano giornalieri."""
-    registra(aioclient_mock)
-    freezer.move_to(SERA_DI_RACCOLTA)
-    voce.add_to_hass(hass)
-    hass.config_entries.async_update_entry(
-        voce, options={CONF_EVENTI_CON_ORARIO: False}
-    )
-    await hass.config.async_set_time_zone("Europe/Rome")
-    assert await hass.config_entries.async_setup(voce.entry_id)
-    await hass.async_block_till_done()
-
-    stato = _stato(hass, voce, "calendar", "calendario")
-    assert stato.attributes["all_day"] is True
-    assert stato.attributes["start_time"] == "2026-09-03 00:00:00"
 
 
 async def test_calendari_per_frazione(
@@ -407,7 +387,6 @@ async def test_calendari_per_frazione_spariscono_dal_registro(
     await hass.config_entries.options.async_configure(
         risultato["flow_id"],
         {
-            CONF_EVENTI_CON_ORARIO: True,
             CONF_CALENDARI_PER_FRAZIONE: False,
             CONF_GIORNI_DA_MOSTRARE: 365,
         },
@@ -1028,7 +1007,6 @@ async def test_spegnere_i_sensori_per_frazione_li_toglie_dal_registro(
     await hass.config_entries.options.async_configure(
         risultato["flow_id"],
         {
-            CONF_EVENTI_CON_ORARIO: True,
             CONF_CALENDARI_PER_FRAZIONE: False,
             CONF_SENSORI_PER_FRAZIONE: False,
             CONF_GIORNI_DA_MOSTRARE: 365,
@@ -1252,7 +1230,6 @@ async def test_la_pulizia_tocca_solo_le_entita_per_frazione(
         await hass.config_entries.options.async_configure(
             risultato["flow_id"],
             {
-                CONF_EVENTI_CON_ORARIO: True,
                 CONF_CALENDARI_PER_FRAZIONE: False,
                 CONF_SENSORI_PER_FRAZIONE: False,
                 CONF_GIORNI_DA_MOSTRARE: 365,

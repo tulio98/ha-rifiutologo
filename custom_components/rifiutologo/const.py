@@ -17,12 +17,10 @@ CONF_CIVICO_NUMERO: Final = "civico_numero"
 
 # --- chiavi delle opzioni ------------------------------------------------------
 
-CONF_EVENTI_CON_ORARIO: Final = "eventi_con_orario"
 CONF_CALENDARI_PER_FRAZIONE: Final = "calendari_per_frazione"
 CONF_SENSORI_PER_FRAZIONE: Final = "sensori_per_frazione"
 CONF_GIORNI_DA_MOSTRARE: Final = "giorni_da_mostrare"
 
-DEFAULT_EVENTI_CON_ORARIO: Final = True
 DEFAULT_CALENDARI_PER_FRAZIONE: Final = False
 # Spento di serie come i calendari: a Padova sono sei entita' in piu' per
 # indirizzo, e chi non le vuole non deve ritrovarsele.

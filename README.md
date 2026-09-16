@@ -329,10 +329,15 @@ E se traslochi, **Riconfigura** cambia indirizzo senza perdere la cronologia.
 
 | Opzione | Di serie | Che cosa cambia |
 |---|---|---|
-| Eventi con la finestra oraria | acceso | Gli eventi coprono la finestra di esposizione invece di essere giornalieri. Serve per far scattare i trigger `calendar` all'ora giusta. |
 | Un calendario per ogni frazione | spento | Aggiunge un'entità calendario per frazione, col colore ufficiale |
 | Un sensore per ogni frazione | spento | Aggiunge un sensore per frazione: la data della **sua** prossima esposizione |
 | Giorni da guardare in avanti | 365 | Fra due raccolte del **vetro** possono passare 35 giorni: con un orizzonte corto sparisce |
+
+> C'era una terza opzione, «Eventi con la finestra oraria», ed è stata **tolta**. Non era
+> più una preferenza estetica da quando lo **stato** del calendario è diventato la risposta
+> a «si può esporre adesso»: con gli eventi giornalieri quella riga avrebbe detto «Si può
+> esporre» alle nove del mattino. Dove il gestore non dichiara nessun orario gli eventi
+> restano giornalieri da soli, che è l'unico caso in cui aveva senso.
 
 ## Automazioni
 

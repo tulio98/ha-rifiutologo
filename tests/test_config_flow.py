@@ -11,7 +11,6 @@ from custom_components.rifiutologo.const import (
     CONF_CALENDARI_PER_FRAZIONE,
     CONF_CIVICO_NUMERO,
     CONF_COMUNE_NOME,
-    CONF_EVENTI_CON_ORARIO,
     CONF_GIORNI_DA_MOSTRARE,
     CONF_VIA_NOME,
     DOMAIN,
@@ -285,7 +284,6 @@ async def test_opzioni(hass: HomeAssistant, gestore, voce: MockConfigEntry) -> N
     risultato = await hass.config_entries.options.async_configure(
         risultato["flow_id"],
         {
-            CONF_EVENTI_CON_ORARIO: False,
             CONF_CALENDARI_PER_FRAZIONE: True,
             CONF_GIORNI_DA_MOSTRARE: 90,
         },
@@ -293,7 +291,6 @@ async def test_opzioni(hass: HomeAssistant, gestore, voce: MockConfigEntry) -> N
     await hass.async_block_till_done()
 
     assert risultato["type"] is FlowResultType.CREATE_ENTRY
-    assert voce.options[CONF_EVENTI_CON_ORARIO] is False
     assert voce.options[CONF_CALENDARI_PER_FRAZIONE] is True
     # Il selettore numerico restituisce un float: deve arrivare intero.
     assert voce.options[CONF_GIORNI_DA_MOSTRARE] == 90

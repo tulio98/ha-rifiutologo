@@ -22,9 +22,7 @@ from homeassistant.util import dt as dt_util
 from .api import Calendario, Conferimento
 from .const import (
     CONF_CALENDARI_PER_FRAZIONE,
-    CONF_EVENTI_CON_ORARIO,
     DEFAULT_CALENDARI_PER_FRAZIONE,
-    DEFAULT_EVENTI_CON_ORARIO,
     icona_per_frazione,
 )
 from .coordinator import RifiutologoConfigEntry, RifiutologoCoordinator
@@ -68,13 +66,6 @@ class _CalendarioBase(RifiutologoEntity, CalendarEntity):
         super().__init__(coordinator, chiave)
         self._memoria: list[CalendarEvent] | None = None
 
-    @property
-    def _con_orario(self) -> bool:
-        """Se costruire eventi con orario invece che giornalieri."""
-        return self.coordinator.config_entry.options.get(
-            CONF_EVENTI_CON_ORARIO, DEFAULT_EVENTI_CON_ORARIO
-        )
-
     @callback
     def _handle_coordinator_update(self) -> None:
         """Butta via gli eventi memorizzati: il calendario e' cambiato."""
@@ -95,7 +86,6 @@ class _CalendarioBase(RifiutologoEntity, CalendarEntity):
                 if calendario is None
                 else costruisci_eventi(
                     calendario,
-                    con_orario=self._con_orario,
                     indirizzo=self.coordinator.indirizzo,
                     prefisso_uid=self.coordinator.config_entry.entry_id,
                     solo_frazione=self._frazione,
@@ -180,17 +170,22 @@ class CalendarioFrazione(_CalendarioBase):
 def costruisci_eventi(
     calendario: Calendario,
     *,
-    con_orario: bool,
     indirizzo: str,
     prefisso_uid: str,
     solo_frazione: str | None = None,
 ) -> list[CalendarEvent]:
     """Trasforma il calendario del gestore in eventi di Home Assistant.
 
-    Con `con_orario` l'evento copre la finestra di ESPOSIZIONE dichiarata dal
-    gestore, che e' la cosa che serve davvero per farsi avvisare in tempo: a
-    Padova dalle 20:00 alle 24:00, a Bologna dalle 20:00 alle 06:00 del mattino
-    dopo.
+    L'evento copre la finestra di ESPOSIZIONE dichiarata dal gestore, che e' la
+    cosa che serve per farsi avvisare in tempo: a Padova dalle 19:00 alle 24:00,
+    a Bologna dalle 20:00 alle 06:00 del mattino dopo.
+
+    Non e' piu' una preferenza. C'era un'opzione per costruirli giornalieri, ed
+    e' stata tolta quando lo STATO di questa entita' e' diventato la risposta a
+    "si puo' esporre adesso": con eventi giornalieri quella riga avrebbe detto
+    "Si puo' esporre" alle nove del mattino, cioe' avrebbe mentito. Dove il
+    gestore non dichiara niente gli eventi degenerano in giornalieri da soli,
+    che e' l'unico caso in cui aveva senso.
 
     Resta giornaliero un caso solo: quando il gestore non dichiara NIENTE, ne'
     un'apertura ne' una chiusura. Allora la frase esatta del gestore finisce
@@ -233,7 +228,7 @@ def costruisci_eventi(
             # e un evento di durata zero non si vede e non si spiega. Il banco
             # mutazionale la segnala come equivalente, ed e' corretto che lo
             # faccia: e' una rete, non una regola.
-            if con_orario and dichiarato and chiude > apre:
+            if dichiarato and chiude > apre:
                 inizio, fine = apre, chiude
             else:
                 # Evento giornaliero: start ed end devono essere entrambi date,

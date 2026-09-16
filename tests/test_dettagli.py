@@ -25,7 +25,6 @@ from custom_components.rifiutologo.api import (
 )
 from custom_components.rifiutologo.const import (
     CONF_CALENDARI_PER_FRAZIONE,
-    CONF_EVENTI_CON_ORARIO,
     CONF_GIORNI_DA_MOSTRARE,
     DOMAIN,
     UPDATE_INTERVAL_HOURS,
@@ -260,7 +259,6 @@ async def test_il_calendario_complessivo_sopravvive_alla_pulizia(
     await hass.config_entries.options.async_configure(
         risultato["flow_id"],
         {
-            CONF_EVENTI_CON_ORARIO: True,
             CONF_CALENDARI_PER_FRAZIONE: False,
             CONF_GIORNI_DA_MOSTRARE: 365,
         },

@@ -247,5 +247,5 @@ def test_gli_eventi_dello_stesso_giorno_sono_in_ordine_alfabetico() -> None:
         ),
         allegati=(),
     )
-    eventi = costruisci_eventi(cal, con_orario=True, indirizzo="x", prefisso_uid="e")
+    eventi = costruisci_eventi(cal, indirizzo="x", prefisso_uid="e")
     assert [e.summary for e in eventi] == ["Carta", "Vetro"]
