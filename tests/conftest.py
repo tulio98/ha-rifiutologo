@@ -30,6 +30,13 @@ COMUNE_ID = 372
 VIA_ID = 26863
 CIVICO_ID = 1328844
 
+# Quello che la tendina MANDA quando si sceglie una voce: il testo che si legge,
+# non l'id. E' il valore dell'opzione, e coincide con la sua etichetta - vedi il
+# commento in `_tendina` per il perche'.
+COMUNE_SCELTO = "Padova (PD)"
+VIA_SCELTA = "VIA BERNARDO TREVISAN"
+CIVICO_SCELTO = "8"
+
 DATI = {
     CONF_COMUNE_ID: COMUNE_ID,
     CONF_COMUNE_NOME: "Padova",

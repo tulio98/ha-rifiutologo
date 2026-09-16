@@ -106,7 +106,6 @@ class RifiutologoConfigFlow(ConfigFlow, domain=DOMAIN):
             scelto = _trova(
                 self._comuni,
                 user_input[CAMPO_COMUNE],
-                lambda c: c.id,
                 lambda c: (c.nome, c.etichetta),
             )
             if scelto is not None:
@@ -116,7 +115,8 @@ class RifiutologoConfigFlow(ConfigFlow, domain=DOMAIN):
             errore = "comune_sconosciuto"
 
         opzioni = [
-            SelectOptionDict(value=str(c.id), label=c.etichetta)
+            # Il valore e' il TESTO, non l'id: vedi `_tendina`.
+            SelectOptionDict(value=c.etichetta, label=c.etichetta)
             for c in sorted(self._comuni, key=lambda c: c.nome)
         ]
         return self.async_show_form(
@@ -148,9 +148,7 @@ class RifiutologoConfigFlow(ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="cannot_connect")
 
         if user_input is not None:
-            scelta = _trova(
-                self._vie, user_input[CAMPO_VIA], lambda v: v.id, lambda v: (v.nome,)
-            )
+            scelta = _trova(self._vie, user_input[CAMPO_VIA], lambda v: (v.nome,))
             if scelta is not None:
                 self._via = scelta
                 self._civici = []
@@ -158,7 +156,7 @@ class RifiutologoConfigFlow(ConfigFlow, domain=DOMAIN):
             errore = "via_sconosciuta"
 
         opzioni = [
-            SelectOptionDict(value=str(v.id), label=v.nome)
+            SelectOptionDict(value=v.nome, label=v.nome)
             for v in sorted(self._vie, key=lambda v: v.nome)
         ]
         return self.async_show_form(
@@ -194,10 +192,7 @@ class RifiutologoConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             civico = _trova(
-                self._civici,
-                user_input[CAMPO_CIVICO],
-                lambda c: c.id,
-                lambda c: (c.numero,),
+                self._civici, user_input[CAMPO_CIVICO], lambda c: (c.numero,)
             )
             if civico is None:
                 errori["base"] = "civico_sconosciuto"
@@ -222,7 +217,7 @@ class RifiutologoConfigFlow(ConfigFlow, domain=DOMAIN):
                         return await self._concludi(civico)
 
         opzioni = [
-            SelectOptionDict(value=str(c.id), label=c.numero) for c in self._civici
+            SelectOptionDict(value=c.numero, label=c.numero) for c in self._civici
         ]
         return self.async_show_form(
             step_id="civico",
@@ -360,6 +355,20 @@ def _tendina(opzioni: list[SelectOptionDict]) -> SelectSelector:
     devono corrispondere tutti, quindi funziona anche "bernardo trevisan".
 
     `sort=False` perche' l'ordine se lo sono gia' dato i chiamanti, sul nome.
+
+    ATTENZIONE, e' la ragione per cui il valore di ogni voce e' il TESTO e non
+    l'id del gestore: il campo, una volta scelta una voce, mostra il VALORE
+    grezzo. Non e' una svista nostra - `ha-picker-field.ts` disegna
+    `<span slot="headline">${this.value}</span>` quando nessuno gli passa un
+    `valueRenderer`, e il selettore di Home Assistant non gliene passa uno
+    (`ha-selector-select.ts`, ramo `custom_value`). Con l'id dentro al valore
+    l'utente sceglieva "Padova" e nella casella gli restava scritto "372".
+
+    Si puo' fare perche' i nomi identificano: verificato sull'API viva il 16
+    settembre 2026 - 181 comuni con etichette tutte distinte, le 2200 vie di
+    Padova tutte distinte, e 2341 civici su 45 vie (fino a 538 in una sola)
+    senza un solo numero ripetuto. L'id resta quello che finisce nella voce di
+    configurazione: cambia solo cio' che viaggia nel modulo.
     """
     return SelectSelector(
         SelectSelectorConfig(
@@ -374,21 +383,22 @@ def _tendina(opzioni: list[SelectOptionDict]) -> SelectSelector:
 def _trova[T](
     elementi: list[T],
     valore: str,
-    chiave: Callable[[T], Any],
-    nomi: Callable[[T], tuple[str, ...]] = lambda _elemento: (),
+    nomi: Callable[[T], tuple[str, ...]],
 ) -> T | None:
-    """Ritrova un elemento scelto dalla tendina, o scritto a mano.
+    """Ritrova un elemento dal testo che arriva dal modulo.
 
-    Scegliendo dall'elenco arriva l'id serializzato come stringa, ed e' il caso
-    normale. Ma la casella di ricerca lascia anche confermare cio' che si e'
-    digitato senza cliccare un suggerimento, e allora arriva il testo: se
-    combacia con un nome vero lo si accetta, perche' rifiutare "via bernardo trevisan" scritto giusto sarebbe una pedanteria. Tutto il resto e' None, e
-    chi chiama lo trasforma in un errore leggibile invece che in un modulo che
-    si ripresenta senza dire niente.
+    Dal modulo arriva sempre del TESTO, mai un id: il valore di ogni voce e' la
+    sua etichetta, per la ragione spiegata in `_tendina`. Quindi qui si cerca
+    per nome e basta, e si e' clementi su maiuscole e spazi - la casella lascia
+    anche confermare cio' che si e' digitato senza cliccare un suggerimento, e
+    rifiutare "via bernardo trevisan" scritto giusto sarebbe una pedanteria.
+
+    Un elemento puo' avere piu' nomi accettabili: per un comune valgono sia
+    "Padova" sia "Padova (PD)", che e' l'etichetta vera.
+
+    Tutto il resto e' None, e chi chiama lo trasforma in un errore leggibile
+    invece che in un modulo che si ripresenta senza dire niente.
     """
-    for elemento in elementi:
-        if str(chiave(elemento)) == valore:
-            return elemento
     scritto = valore.strip().casefold()
     if not scritto:
         # Oggi non ci si arriva: il parser scarta le voci senza nome, quindi

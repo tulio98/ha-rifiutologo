@@ -20,7 +20,16 @@ from homeassistant.config_entries import SOURCE_RECONFIGURE, SOURCE_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
-from .conftest import CIVICO_ID, COMUNE_ID, VIA_ID, carica, registra
+from .conftest import (
+    CIVICO_ID,
+    CIVICO_SCELTO,
+    COMUNE_ID,
+    COMUNE_SCELTO,
+    VIA_ID,
+    VIA_SCELTA,
+    carica,
+    registra,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -47,12 +56,12 @@ async def _fino_al_civico(
     assert risultato["step_id"] == "user"
 
     risultato = await hass.config_entries.flow.async_configure(
-        risultato["flow_id"], {"comune": str(COMUNE_ID)}
+        risultato["flow_id"], {"comune": COMUNE_SCELTO}
     )
     assert risultato["step_id"] == "via"
 
     risultato = await hass.config_entries.flow.async_configure(
-        risultato["flow_id"], {"via": str(VIA_ID)}
+        risultato["flow_id"], {"via": VIA_SCELTA}
     )
     if atteso is not None:
         assert risultato["step_id"] == atteso
@@ -63,7 +72,7 @@ async def test_flusso_completo(hass: HomeAssistant, gestore) -> None:
     """Tre tendine e la voce e' creata, col titolo giusto."""
     risultato = await _fino_al_civico(hass)
     risultato = await hass.config_entries.flow.async_configure(
-        risultato["flow_id"], {"civico": str(CIVICO_ID)}
+        risultato["flow_id"], {"civico": CIVICO_SCELTO}
     )
     await hass.async_block_till_done()
 
@@ -83,7 +92,10 @@ async def test_le_tendine_sono_piene(hass: HomeAssistant, gestore) -> None:
     )
     selettore = risultato["data_schema"].schema["comune"]
     valori = [o["value"] for o in selettore.config["options"]]
-    assert str(COMUNE_ID) in valori
+    # Il valore e' il testo che si legge, non l'id: e' cio' che il campo
+    # mostra dopo la scelta, e un id li' dentro non direbbe niente a nessuno.
+    assert COMUNE_SCELTO in valori
+    assert str(COMUNE_ID) not in valori
     # `custom_value` non serve ad accettare valori inventati - quelli li
     # respinge il flusso, e c'e' un test apposta piu' sotto - ma e' il campo da
     # cui Home Assistant decide se disegnare una casella di ricerca o un menu'
@@ -150,11 +162,11 @@ async def test_un_valore_inventato_lo_dice(
     )
     if passo != "user":
         risultato = await hass.config_entries.flow.async_configure(
-            risultato["flow_id"], {"comune": str(COMUNE_ID)}
+            risultato["flow_id"], {"comune": COMUNE_SCELTO}
         )
     if passo == "civico":
         risultato = await hass.config_entries.flow.async_configure(
-            risultato["flow_id"], {"via": str(VIA_ID)}
+            risultato["flow_id"], {"via": VIA_SCELTA}
         )
 
     risultato = await hass.config_entries.flow.async_configure(
@@ -171,7 +183,7 @@ async def test_la_via_scritta_per_esteso_vale(hass: HomeAssistant, gestore) -> N
         DOMAIN, context={"source": SOURCE_USER}
     )
     risultato = await hass.config_entries.flow.async_configure(
-        risultato["flow_id"], {"comune": str(COMUNE_ID)}
+        risultato["flow_id"], {"comune": COMUNE_SCELTO}
     )
     risultato = await hass.config_entries.flow.async_configure(
         risultato["flow_id"], {"via": "via bernardo trevisan"}
@@ -191,7 +203,7 @@ async def test_tutte_le_tendine_sono_cercabili(hass: HomeAssistant, gestore) -> 
     risultato = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": SOURCE_USER}
     )
-    for campo, avanti in (("comune", str(COMUNE_ID)), ("via", str(VIA_ID))):
+    for campo, avanti in (("comune", COMUNE_SCELTO), ("via", VIA_SCELTA)):
         assert risultato["data_schema"].schema[campo].config["custom_value"] is True
         risultato = await hass.config_entries.flow.async_configure(
             risultato["flow_id"], {campo: avanti}
@@ -207,7 +219,7 @@ async def test_indirizzo_senza_porta_a_porta(
 
     risultato = await _fino_al_civico(hass)
     risultato = await hass.config_entries.flow.async_configure(
-        risultato["flow_id"], {"civico": str(CIVICO_ID)}
+        risultato["flow_id"], {"civico": CIVICO_SCELTO}
     )
 
     assert risultato["type"] is FlowResultType.FORM
@@ -233,7 +245,7 @@ async def test_indirizzo_gia_configurato(
 
     risultato = await _fino_al_civico(hass)
     risultato = await hass.config_entries.flow.async_configure(
-        risultato["flow_id"], {"civico": str(CIVICO_ID)}
+        risultato["flow_id"], {"civico": CIVICO_SCELTO}
     )
     assert risultato["type"] is FlowResultType.ABORT
     assert risultato["reason"] == "already_configured"
@@ -248,9 +260,9 @@ async def test_riconfigura(hass: HomeAssistant, gestore, voce: MockConfigEntry) 
     risultato = await _fino_al_civico(
         hass, source=SOURCE_RECONFIGURE, entry_id=voce.entry_id
     )
-    # Il civico "1" della stessa via, che nelle fixture ha id 1328838.
+    # Il civico "1" della stessa via, invece dell'8 di partenza.
     risultato = await hass.config_entries.flow.async_configure(
-        risultato["flow_id"], {"civico": "1328838"}
+        risultato["flow_id"], {"civico": "1"}
     )
     await hass.async_block_till_done()
 
@@ -319,7 +331,7 @@ async def test_comune_senza_vie(hass: HomeAssistant, aioclient_mock) -> None:
         DOMAIN, context={"source": SOURCE_USER}
     )
     risultato = await hass.config_entries.flow.async_configure(
-        risultato["flow_id"], {"comune": str(COMUNE_ID)}
+        risultato["flow_id"], {"comune": COMUNE_SCELTO}
     )
     assert risultato["type"] is FlowResultType.FORM
     assert risultato["step_id"] == "user"
@@ -347,10 +359,54 @@ def test_trova_non_pesca_niente_con_una_stringa_vuota() -> None:
     succedere se un giorno il gestore mandasse un nome bianco.
     """
     vie = [Via(id=1, nome=""), Via(id=2, nome="VIA VERA")]
-    nomi = (lambda v: (v.nome,),)[0]
 
-    assert _trova(vie, "", lambda v: v.id, nomi) is None
-    assert _trova(vie, "   ", lambda v: v.id, nomi) is None
-    # E quello vero si trova lo stesso, per id e per nome.
-    assert _trova(vie, "2", lambda v: v.id, nomi).id == 2
-    assert _trova(vie, "via vera", lambda v: v.id, nomi).id == 2
+    def nomi(via: Via) -> tuple[str, ...]:
+        return (via.nome,)
+
+    assert _trova(vie, "", nomi) is None
+    assert _trova(vie, "   ", nomi) is None
+    # E quello vero si trova lo stesso, comunque lo si scriva.
+    assert _trova(vie, "VIA VERA", nomi).id == 2
+    assert _trova(vie, "  via vera  ", nomi).id == 2
+
+
+async def test_il_valore_di_ogni_voce_e_il_testo_che_si_legge(
+    hass: HomeAssistant, gestore
+) -> None:
+    """Il campo, dopo la scelta, mostra il VALORE grezzo dell'opzione.
+
+    Non e' una nostra svista: `ha-picker-field.ts` disegna
+    `<span slot="headline">${this.value}</span>` quando nessuno gli passa un
+    `valueRenderer`, e il selettore di Home Assistant non gliene passa uno. Con
+    l'id del gestore dentro al valore, chi sceglieva "Padova" si ritrovava
+    scritto "372" nella casella.
+
+    Quindi l'invariante e' questo, su tutti e tre i passi: valore == etichetta.
+    """
+    risultato = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    for campo, avanti in (
+        ("comune", COMUNE_SCELTO),
+        ("via", VIA_SCELTA),
+        ("civico", CIVICO_SCELTO),
+    ):
+        opzioni = risultato["data_schema"].schema[campo].config["options"]
+        assert opzioni, campo
+        for voce in opzioni:
+            assert voce["value"] == voce["label"], (
+                f"{campo}: la casella mostrerebbe {voce['value']!r} "
+                f"invece di {voce['label']!r}"
+            )
+            assert not voce["value"].isdigit() or campo == "civico", (
+                f"{campo}: {voce['value']!r} e' un numero nudo"
+            )
+        risultato = await hass.config_entries.flow.async_configure(
+            risultato["flow_id"], {campo: avanti}
+        )
+
+    assert risultato["type"] is FlowResultType.CREATE_ENTRY
+    # E la voce salvata conserva comunque gli ID veri, che sono quelli che
+    # servono a chiamare il gestore: a cambiare e' solo cio' che viaggia nel
+    # modulo.
+    assert risultato["result"].unique_id == f"{COMUNE_ID}-{VIA_ID}-{CIVICO_ID}"
