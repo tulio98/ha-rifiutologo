@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date
-from typing import Any
+from datetime import date, datetime, timedelta
+from typing import Any, Final
 
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
@@ -14,10 +15,16 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .api import GiornoRaccolta, slug
-from .const import ATTRIBUTION, DOMAIN, MANUFACTURER
+from .api import Calendario, GiornoRaccolta, slug
+from .const import (
+    ATTRIBUTION,
+    DOMAIN,
+    GIORNI_SETTIMANA,
+    MANUFACTURER,
+    giorni_abbreviati,
+)
 from .coordinator import RifiutologoConfigEntry, RifiutologoCoordinator
-from .orari import apertura, chiusura
+from .orari import agenda, apertura, chiusura
 
 URL_SERVIZIO = "https://www.ilrifiutologo.it"
 
@@ -118,6 +125,69 @@ def attributi_giorno(giorno: GiornoRaccolta | None, oggi: date) -> dict[str, Any
         # faceva valere per tutte.
         "note": _concorde(note),
         "note_per_frazione": note,
+    }
+
+
+def _frazioni_distinte(giorni: list[GiornoRaccolta]) -> list[str]:
+    """Le frazioni di piu' sere, senza doppioni e nell'ordine in cui capitano."""
+    viste: dict[str, None] = {}
+    for giorno in giorni:
+        viste.update(dict.fromkeys(giorno.frazioni))
+    return list(viste)
+
+
+def _etichetta_giorno(giorno: date, lingua: str | None) -> str:
+    """L'etichetta di una sera: "mer 16/09", come si legge su un calendario.
+
+    Il nome del giorno segue la lingua di Home Assistant, non quella di chi ha
+    scritto il codice. Con una lingua che l'integrazione non parla si ripiega
+    sull'inglese, come fa Home Assistant con qualunque testo non tradotto.
+
+    La data e' giorno/mese perche' il servizio e' italiano; l'anno non serve in
+    una finestra di sette giorni, e la data completa sta in `giorni`.
+    """
+    abbreviazioni = giorni_abbreviati(lingua)
+    return f"{abbreviazioni[giorno.isoweekday() - 1]} {giorno:%d/%m}"
+
+
+def attributi_settimana(
+    dati: Calendario | None, adesso: datetime, lingua: str | None
+) -> dict[str, Any]:
+    """La settimana di esposizioni, nelle due forme che servono a due lettori.
+
+    Stanno sul CALENDARIO perche' l'agenda e' il suo mestiere, e stanno insieme
+    perche' sono la stessa settimana guardata in due modi:
+
+    - `calendario` e' un dizionario PIATTO, "mer 16/09" -> "Indifferenziato,
+      Organico". E' quello che si legge a occhio, e la forma non e' un
+      capriccio: Home Assistant rende un attributo che contiene dizionari come
+      un blocco YAML (`ha-attribute-value.ts`) e una lista di stringhe la unisce
+      con le virgole su una riga sola. Un dizionario piatto e' l'unica forma che
+      venga fuori a righe.
+    - `giorni` e' la stessa settimana per intero, una voce per sera con la
+      stessa forma che hanno gli altri attributi: serve ai template e alle card,
+      che dai nomi abbreviati non ricaverebbero ne' le date ne' gli orari ne' i
+      colori.
+
+    Non sono due verita' diverse: la prima e' la proiezione leggibile della
+    seconda, presa dalla stessa agenda nello stesso istante.
+    """
+    oggi = adesso.date()
+    giorni = agenda(dati, adesso, GIORNI_SETTIMANA)
+    return {
+        # Le date non si ripetono dentro una finestra di sette giorni, quindi
+        # nessuna chiave puo' scavalcarne un'altra.
+        "calendario": {
+            _etichetta_giorno(giorno.giorno, lingua): ", ".join(giorno.frazioni)
+            for giorno in giorni
+        },
+        # `da` e' oggi, ma la prima sera dell'elenco puo' essere quella di IERI,
+        # se la sua finestra scavalca la mezzanotte ed e' ancora aperta. E' roba
+        # ancora da fare: nasconderla sarebbe il difetto.
+        "da": oggi.isoformat(),
+        "a": (oggi + timedelta(days=GIORNI_SETTIMANA - 1)).isoformat(),
+        "frazioni": _frazioni_distinte(giorni),
+        "giorni": [attributi_giorno(giorno, oggi) for giorno in giorni],
     }
 
 
@@ -255,3 +325,39 @@ def _chiave_libera(radice: str, usate: set[str]) -> str:
         chiave = f"{radice}_{contatore}"
     usate.add(chiave)
     return chiave
+
+
+# --- le entita' ritirate ------------------------------------------------------
+
+ENTITA_RITIRATE: Final[tuple[tuple[str, str], ...]] = (
+    (Platform.BINARY_SENSOR, "finestra_aperta"),
+    (Platform.SENSOR, "prossima_raccolta"),
+    (Platform.SENSOR, "giorni_alla_prossima"),
+    (Platform.SENSOR, "settimana"),
+)
+"""Le entita' che l'integrazione non crea piu', da togliere dal registro.
+
+Senza, resterebbero li' in stato "non disponibile" per sempre: una riga grigia
+in fondo alla pagina del dispositivo, cioe' peggio del disordine che si voleva
+togliere. Home Assistant le ripulisce da solo soltanto quando si rimuove
+l'intera voce di configurazione.
+"""
+
+
+@callback
+def rimuovi_entita_ritirate(hass: HomeAssistant, entry: RifiutologoConfigEntry) -> None:
+    """Toglie dal registro le entita' che questa versione non crea piu'.
+
+    Si confronta l'unique_id ESATTO, non un prefisso come fa
+    `_rimuovi_per_frazione`: "prossima_" si porterebbe via anche
+    `prossima_esposizione`, che invece resta ed e' una delle tre che si vedono.
+
+    Idempotente: dal secondo avvio non trova piu' niente da togliere.
+    """
+    registro = er.async_get(hass)
+    ritirate = {
+        (dominio, f"{entry.entry_id}_{chiave}") for dominio, chiave in ENTITA_RITIRATE
+    }
+    for voce in er.async_entries_for_config_entry(registro, entry.entry_id):
+        if (voce.domain, voce.unique_id) in ritirate:
+            registro.async_remove(voce.entity_id)

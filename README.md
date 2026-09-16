@@ -36,23 +36,37 @@ Per ogni indirizzo configurato nasce un dispositivo con queste entità:
 
 | Entità | Che cos'è | A cosa serve |
 |---|---|---|
-| **Raccolta** (`calendar`) | Calendario di tutte le frazioni | Il pannello Calendario, la card, e i trigger `calendar` |
-| **Raccolta stasera** (`binary_sensor`) | Acceso finché c'è tempo per esporre | Il mattone delle automazioni |
-| **Finestra di esposizione aperta** (`binary_sensor`) | Acceso **solo dentro** l'orario dichiarato dal gestore | Far partire l'avviso nel momento esatto |
+| **Calendario esposizioni** (`calendar`) | Tutte le sere dell'anno; il suo **stato** dice se in questo momento si può esporre — `Si può esporre` / `Non adesso` | La [card della settimana](#in-dashboard), il pannello Calendario, e i trigger `calendar` con `offset` |
 | **Da esporre stasera** (`sensor`) | `Organico, Carta` oppure `nessuna` | Il testo della notifica |
-| **Prossima raccolta** (`sensor`) | Data della prossima raccolta, da oggi in avanti | Card e template |
-| **Prossima esposizione** (`sensor`) | Istante in cui si apre la sua finestra | `device_class: timestamp`, si legge come «fra 3 ore» |
-| **Giorni alla prossima** (`sensor`) | `0` vuol dire stasera | Soglie e colori |
-| **Raccolte in settimana** (`sensor`) | Quante sere si esce da qui a sette giorni; l'elenco completo è negli attributi | Soglie e template. **Il calendario da guardare è la card `calendar`**, [qui sotto](#in-dashboard) |
-| **Zona di raccolta** (`sensor`) | `Calendario Padova Q6 2026` | Controllare di aver preso il calendario giusto (disattivata di serie) |
+| **Inizio esposizione** (`sensor`) | L'istante in cui la finestra si apre | `device_class: timestamp`: Home Assistant lo legge da sé come «Tra 3 ore», «Domani», «1 ora fa» |
+| **Esposizione stasera** (`binary_sensor`) | Acceso finché c'è tempo per esporre | Il mattone delle automazioni |
+| **Zona di raccolta** (`sensor`) | `Calendario Padova Q6 2026` | Controllare di aver preso il calendario giusto (diagnostica, disattivata di serie) |
+
+Quattro righe, quattro domande diverse. Stasera alle 20:20, a Padova Q2:
+
+```text
+Calendario esposizioni ........ Si può esporre
+Da esporre stasera ............ Indifferenziato, Organico
+Inizio esposizione ............ 1 ora fa
+Esposizione stasera ........... Sì
+```
+
+Domani mattina alle 10 le stesse righe dicono **«Non adesso» · «nessuna» · «Domani» · «No»**.
+
+> **Quattro entità sono state ritirate nella 0.6.0**: *Finestra di esposizione aperta*
+> (adesso è lo stato del calendario), *Prossima raccolta* e *Giorni alla prossima*
+> (entrambe dentro *Inizio esposizione*, che in più sa l'ora e si legge da sola), e
+> *Raccolte in settimana* (l'agenda è passata sugli attributi del calendario). Chi
+> aggiorna non le trova più: l'integrazione le toglie dal registro da sola, al primo
+> avvio, invece di lasciarle lì in stato «non disponibile».
 
 > **Gli `entity_id` dipendono dalla lingua di Home Assistant**, perché li genera lui dal nome
 > dell'entità: in italiano diventano `sensor.<indirizzo>_da_esporre_stasera`, in inglese
 > `sensor.<indirizzo>_waste_to_put_out_tonight`. Negli esempi qui sotto c'è `CAMBIAMI`:
 > aprine il dispositivo e copia gli id veri.
 
-Le entità che descrivono **una sera di raccolta** — *Raccolta stasera*, *Da esporre stasera*,
-*Prossima raccolta* e *Prossima esposizione* — portano con sé questi attributi:
+Le entità che descrivono **una sera di raccolta** — *Esposizione stasera*, *Da esporre
+stasera* e *Inizio esposizione* — portano con sé questi attributi:
 
 | Attributo | Contenuto |
 |---|---|
@@ -68,7 +82,7 @@ Le entità che descrivono **una sera di raccolta** — *Raccolta stasera*, *Da e
 | `note` / `note_per_frazione` | la nota del gestore, con la stessa regola: lo scalare solo se vale per tutte |
 | `straordinario` | se il gestore segnala una raccolta eccezionale |
 
-*Giorni alla prossima* espone solo il numero; *Zona di raccolta* espone `pdf`, `allegati` e `nota`.
+*Zona di raccolta* espone invece `pdf`, `allegati` e `nota`.
 
 ### La settimana in una entità sola
 
@@ -171,20 +185,25 @@ Negli attributi:
 | `nota` / `straordinario` | quello che il gestore segnala su quel conferimento |
 | `prossime` | le prossime cinque date, per vedere il passo a colpo d'occhio |
 
-Come *Prossima raccolta*, **non guarda mai indietro**: un sensore `date` che pubblica ieri
-è un sensore che mente. Per sapere se stanotte si è ancora in tempo c'è *Raccolta stasera*.
+**Non guarda mai indietro**: un sensore `date` che pubblica ieri è un sensore che mente.
+Per sapere se stanotte si è ancora in tempo c'è *Esposizione stasera*.
 
-## I due binary sensor non dicono la stessa cosa
+## «Adesso» e «stasera» non sono la stessa cosa
 
 È la distinzione che serve di più e che si nota di meno.
 
 | | Si accende | Si spegne | Risponde a |
 |---|---|---|---|
-| **Raccolta stasera** | a mezzanotte del giorno di raccolta | quando l'ultima finestra si chiude | «oggi tocca, e sono ancora in tempo?» |
-| **Finestra di esposizione aperta** | all'ora dichiarata dal gestore (19:00, 20:00…) | alla stessa ora dell'altro | «posso uscire **adesso**?» |
+| **Esposizione stasera** (`binary_sensor`) | a mezzanotte del giorno di raccolta | quando l'ultima finestra si chiude | «oggi tocca, e sono ancora in tempo?» |
+| **Calendario esposizioni** (`calendar`) | all'ora dichiarata dal gestore (19:00, 20:00…) | alla stessa ora dell'altro | «posso uscire **adesso**?» |
 
 Alle sei di sera del giorno della carta il primo dice sì e il secondo dice no — ed è la
 risposta giusta: il sacco fuori a quell'ora è fuori regolamento.
+
+Lo stato del calendario **è** la finestra di esposizione, non una sua approssimazione: gli
+istanti dei suoi eventi li danno le stesse due funzioni che accendono i sensori. C'è un
+test che confronta le due cose minuto per minuto, su tutte le forme in cui il gestore
+scrive l'orario.
 
 Dove il gestore **non** dichiara un'apertura — «entro le 04:00» è un termine, non un
 inizio — la finestra vale da mezzanotte, perché in quel caso non c'è nessun'ora prima
@@ -216,11 +235,11 @@ per un residente su cinque.
 
 Conseguenze pratiche, tutte e tre da tenere a mente:
 
-1. **«Raccolta stasera» si spegne alla chiusura della finestra, non a mezzanotte.** A Padova
-   coincidono; a Bologna no.
-2. **Anche «Prossima raccolta» guarda la finestra**, non solo la data. A Modena si espone
-   *dalle 00:00 alle 07:00*: dalle 07:00 in poi la raccolta di oggi è chiusa, e dire «fra 0
-   giorni» mentre il sensore dell'esposizione è spento sarebbero due entità che si
+1. **«Esposizione stasera» si spegne alla chiusura della finestra, non a mezzanotte.** A
+   Padova coincidono; a Bologna no.
+2. **Anche «Inizio esposizione» guarda la finestra**, non solo la data. A Modena si espone
+   *dalle 00:00 alle 07:00*: dalle 07:00 in poi la raccolta di oggi è chiusa, e indicare
+   oggi mentre il sensore dell'esposizione è spento sarebbero due entità che si
    contraddicono.
 3. **Le frazioni scadute spariscono dall'elenco.** A Gradara una frazione chiude alle 23:00 e
    l'altra alle 06:00: dopo le 23:00 «Da esporre stasera» nomina solo la seconda.
@@ -228,12 +247,13 @@ Conseguenze pratiche, tutte e tre da tenere a mente:
 E da qui nasce una distinzione che vale la pena tenere a mente, perché le due entità
 rispondono a due domande diverse:
 
-- **«Raccolta stasera»** e **«Da esporre stasera»** dicono *che cosa si può ancora mettere
-  fuori adesso*. A Bologna, alle due di notte, parlano ancora della sera prima — ed è giusto.
-- **«Prossima raccolta»**, **«Prossima esposizione»** e **«Giorni alla prossima»** guardano
-  solo in avanti: la prima raccolta la cui data non è passata **e** la cui finestra non è
-  ancora chiusa. Non mostrano mai una data passata, e non dicono mai «oggi» quando per oggi
-  non c'è più niente da fare.
+- **«Esposizione stasera»** e **«Da esporre stasera»** dicono *che cosa si può ancora
+  mettere fuori adesso*. A Bologna, alle due di notte, parlano ancora della sera prima — ed
+  è giusto.
+- **«Inizio esposizione»** guarda solo in avanti: la prima raccolta la cui data non è
+  passata **e** la cui finestra non è ancora chiusa. Non indica mai un giorno passato, e non
+  dice mai «oggi» quando per oggi non c'è più niente da fare. Nella sera stessa mostra
+  l'apertura di stasera — «1 ora fa» vuol dire che la finestra è aperta da un'ora.
 
 ## Chi è coperto
 
@@ -326,15 +346,15 @@ automation:
         at: "19:30:00"
     conditions:
       - condition: state
-        entity_id: binary_sensor.CAMBIAMI_raccolta_stasera
+        entity_id: binary_sensor.CAMBIAMI_esposizione_stasera
         state: "on"
     actions:
       - action: notify.mobile_app_CAMBIAMI
         data:
           title: "Stasera si espone"
           message: >-
-            {{ state_attr('binary_sensor.CAMBIAMI_raccolta_stasera', 'frazioni') | join(', ') }}
-            — {{ state_attr('binary_sensor.CAMBIAMI_raccolta_stasera', 'orario_esposizione')
+            {{ state_attr('binary_sensor.CAMBIAMI_esposizione_stasera', 'frazioni') | join(', ') }}
+            — {{ state_attr('binary_sensor.CAMBIAMI_esposizione_stasera', 'orario_esposizione')
                  or 'vedi il calendario' }}
 ```
 
@@ -365,7 +385,7 @@ automation:
   - alias: "Rifiuti - annuncio"
     triggers:
       - trigger: state
-        entity_id: binary_sensor.CAMBIAMI_raccolta_stasera
+        entity_id: binary_sensor.CAMBIAMI_esposizione_stasera
         to: "on"
     conditions:
       - condition: numeric_state
@@ -388,20 +408,19 @@ type: vertical-stack
 cards:
   - type: markdown
     content: |-
-      {% set b = 'binary_sensor.CAMBIAMI_raccolta_stasera' %}
+      {% set b = 'binary_sensor.CAMBIAMI_esposizione_stasera' %}
       {% if is_state(b, 'on') %}
       ## Stasera: {{ state_attr(b, 'frazioni') | join(' + ') }}
       {{ state_attr(b, 'orario_esposizione') or '' }}
       {% else %}
       ## Stasera niente
-      Prossima: **{{ states('sensor.CAMBIAMI_prossima_raccolta') }}**
-      {{ state_attr('sensor.CAMBIAMI_prossima_raccolta', 'frazioni') | join(' + ') }}
-      fra {{ states('sensor.CAMBIAMI_giorni_alla_prossima') }} giorni
+      Prossima: **{{ state_attr('sensor.CAMBIAMI_inizio_esposizione', 'data') }}**
+      {{ state_attr('sensor.CAMBIAMI_inizio_esposizione', 'frazioni') | join(' + ') }}
       {% endif %}
   - type: calendar
     initial_view: listWeek
     entities:
-      - calendar.CAMBIAMI_raccolta
+      - calendar.CAMBIAMI_calendario_esposizioni
 ```
 
 ### Il calendario della settimana
@@ -414,7 +433,7 @@ type: calendar
 title: Raccolte in settimana
 initial_view: listWeek
 entities:
-  - calendar.CAMBIAMI_raccolta
+  - calendar.CAMBIAMI_calendario_esposizioni
 ```
 
 ```text
@@ -472,16 +491,19 @@ Se preferisci una card di testo, senza plugin e senza helper:
 ```yaml
 type: markdown
 content: |-
-  {% set s = 'sensor.CAMBIAMI_raccolte_in_settimana' %}
-  ## Questa settimana: {{ states(s) }} sere
+  {% set s = 'calendar.CAMBIAMI_calendario_esposizioni' %}
+  ## Questa settimana
   {% for quando, cosa in (state_attr(s, 'calendario') or {}).items() -%}
   **{{ quando }}** · {{ cosa }}
   {% endfor %}
 ```
 
-Niente tabella di nomi dei giorni da mantenere a mano: le etichette arrivano già
-pronte nella lingua di Home Assistant. Chi vuole i colori ufficiali, le date complete
-o gli orari passa da `giorni`, che li ha tutti.
+L'agenda della settimana sta **negli attributi del calendario**, che è il posto giusto:
+`calendario` è il dizionario piatto qui sopra, `giorni` la settimana completa con date,
+orari e colori ufficiali per chi costruisce qualcosa di più elaborato.
+
+Niente tabella di nomi dei giorni da mantenere a mano: le etichette arrivano già pronte
+nella lingua di Home Assistant.
 
 ## Come funziona sotto
 

@@ -1,8 +1,8 @@
-"""I sensori: cosa esporre stasera, che cosa esce in settimana, e a chi tocca."""
+"""I sensori: che cosa esporre stasera, da che ora, e in che zona si abita."""
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -10,6 +10,7 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
 )
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
@@ -18,14 +19,12 @@ from .api import Conferimento, GiornoRaccolta
 from .const import (
     CONF_SENSORI_PER_FRAZIONE,
     DEFAULT_SENSORI_PER_FRAZIONE,
-    GIORNI_SETTIMANA,
     PROSSIME_DA_ELENCARE,
-    giorni_abbreviati,
     icona_per_frazione,
 )
 from .coordinator import RifiutologoConfigEntry, RifiutologoCoordinator
 from .entity import RifiutologoEntity, attributi_giorno, collega_per_frazione
-from .orari import agenda, apertura, apertura_conferimento, scadenza, solo_aperti
+from .orari import apertura, apertura_conferimento, scadenza, solo_aperti
 
 NESSUNA = "nessuna"
 LUNGHEZZA_MASSIMA_STATO = 255
@@ -59,10 +58,7 @@ async def async_setup_entry(
     async_add_entities(
         [
             SensoreEsposizioneStasera(coordinator),
-            SensoreProssimaRaccolta(coordinator),
             SensoreProssimaEsposizione(coordinator),
-            SensoreGiorniAllaProssima(coordinator),
-            SensoreSettimana(coordinator),
             SensoreZona(coordinator),
             *per_frazione,
         ]
@@ -131,33 +127,22 @@ class SensoreEsposizioneStasera(_SensoreBase):
         return attributi_giorno(self._giorno_di_oggi, self._oggi)
 
 
-class SensoreProssimaRaccolta(_SensoreBase):
-    """La data della prossima raccolta, quella in corso compresa."""
-
-    _attr_translation_key = "prossima_raccolta"
-    _attr_device_class = SensorDeviceClass.DATE
-
-    def __init__(self, coordinator: RifiutologoCoordinator) -> None:
-        """Costruisce il sensore."""
-        super().__init__(coordinator, "prossima_raccolta")
-
-    @property
-    def native_value(self) -> date | None:
-        """La data del prossimo giorno di esposizione."""
-        giorno = self._prossimo_giorno
-        return giorno.giorno if giorno else None
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Dettagli della prossima raccolta."""
-        return attributi_giorno(self._prossimo_giorno, self._oggi)
-
-
 class SensoreProssimaEsposizione(_SensoreBase):
-    """L'istante in cui si apre la finestra di esposizione della prossima raccolta.
+    """L'istante in cui si apre la finestra di esposizione.
 
-    Nella sera stessa e' gia' passato di qualche ora, e vuol dire che la
-    finestra e' aperta adesso; non torna mai al giorno prima.
+    Si chiama "Inizio esposizione" e non piu' "Prossima esposizione", e il conto
+    non e' cambiato di una riga: cambiato e' il nome, che prometteva il futuro e
+    mostrava l'apertura della sera IN CORSO. "Inizio esposizione - 1 ora fa" e'
+    una frase vera e utile; "Prossima esposizione - 1 ora fa" si contraddiceva
+    da sola.
+
+    La chiave di traduzione resta `prossima_esposizione`: cambiarla farebbe
+    sparire l'icona, che `icons.json` indicizza proprio su quella.
+
+    Home Assistant lo rende da solo in forma relativa e nella lingua di chi
+    guarda - "Tra 1 ora", "Domani", "1 ora fa" - ed e' il motivo per cui non
+    esiste piu' un sensore che conta i giorni: quello sarebbe un tempo relativo
+    scritto nel database, che le regole di Home Assistant vietano per iscritto.
     """
 
     _attr_translation_key = "prossima_esposizione"
@@ -184,111 +169,6 @@ class SensoreProssimaEsposizione(_SensoreBase):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Dettagli della prossima raccolta."""
         return attributi_giorno(self._prossimo_giorno, self._oggi)
-
-
-class SensoreGiorniAllaProssima(_SensoreBase):
-    """Quanti giorni mancano: 0 vuol dire stasera, o finestra gia' aperta."""
-
-    _attr_translation_key = "giorni_alla_prossima"
-    _attr_native_unit_of_measurement = "d"
-
-    def __init__(self, coordinator: RifiutologoCoordinator) -> None:
-        """Costruisce il sensore."""
-        super().__init__(coordinator, "giorni_alla_prossima")
-
-    @property
-    def native_value(self) -> int | None:
-        """Giorni che mancano alla prossima esposizione."""
-        giorno = self._prossimo_giorno
-        if giorno is None:
-            return None
-        # Non puo' essere negativo: `prossima` esclude per costruzione i giorni
-        # gia' passati. Zero vuol dire stasera.
-        return (giorno.giorno - self._oggi).days
-
-
-def _frazioni_distinte(giorni: list[GiornoRaccolta]) -> list[str]:
-    """Le frazioni di piu' sere, senza doppioni e nell'ordine in cui capitano."""
-    viste: dict[str, None] = {}
-    for giorno in giorni:
-        viste.update(dict.fromkeys(giorno.frazioni))
-    return list(viste)
-
-
-class SensoreSettimana(_SensoreBase):
-    """Tutte le sere di esposizione dei prossimi sette giorni, in una entita' sola.
-
-    Lo stato conta le SERE, non le frazioni: due bidoni nella stessa sera fanno
-    uno, perche' la domanda a cui risponde e' quante volte si esce di casa. Nello
-    stato il calendario non ci puo' stare: Home Assistant rifiuta uno stato piu'
-    lungo di 255 caratteri - scrive un errore nel log e mette l'entita' a
-    "unknown" (core.py, `validate_state`) - e una settimana fitta li supera.
-
-    Gli attributi sono due, e sono due perche' servono a due lettori diversi:
-
-    - `calendario` e' un dizionario PIATTO, "mer 16/09" -> "Indifferenziato,
-      Organico". E' quello che si legge a occhio, e la forma non e' un
-      capriccio: nella finestra dell'entita' Home Assistant rende un attributo
-      che contiene dizionari come un blocco YAML (`ha-attribute-value.ts`,
-      `isObjectValue`), e una lista di stringhe la unisce con le virgole su una
-      riga sola. Un dizionario piatto e' l'unica forma che venga fuori a righe,
-      cioe' l'unica che somigli a un calendario.
-    - `giorni` e' la stessa settimana per intero, una voce per sera con la
-      stessa forma degli altri sensori: serve ai template e alle card, che dai
-      nomi abbreviati non ricaverebbero ne' le date ne' gli orari ne' i colori.
-
-    Non sono due verita' diverse: `calendario` e' la proiezione leggibile di
-    `giorni`, calcolata dalla stessa agenda nello stesso istante.
-    """
-
-    _attr_translation_key = "settimana"
-
-    def __init__(self, coordinator: RifiutologoCoordinator) -> None:
-        """Costruisce il sensore."""
-        super().__init__(coordinator, "settimana")
-
-    @property
-    def native_value(self) -> int | None:
-        """Quante sere di esposizione restano dentro la finestra."""
-        if self.coordinator.data is None:
-            return None
-        return len(agenda(self.coordinator.data, dt_util.now(), GIORNI_SETTIMANA))
-
-    def _etichetta(self, giorno: date) -> str:
-        """L'etichetta di una sera: "mer 16/09", come si legge su un calendario.
-
-        Il nome del giorno segue la lingua di Home Assistant, non quella di chi
-        ha scritto il codice: `hass.config.language`. Con una lingua che
-        l'integrazione non parla si ripiega sull'inglese, come fa Home Assistant
-        con qualunque testo non tradotto.
-
-        La data e' giorno/mese perche' il servizio e' italiano; l'anno non serve
-        in una finestra di sette giorni, e la data completa sta in `giorni`.
-        """
-        abbreviazioni = giorni_abbreviati(self.hass.config.language)
-        return f"{abbreviazioni[giorno.isoweekday() - 1]} {giorno:%d/%m}"
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """L'elenco delle sere, e le frazioni che compaiono nella settimana."""
-        adesso = dt_util.now()
-        oggi = adesso.date()
-        giorni = agenda(self.coordinator.data, adesso, GIORNI_SETTIMANA)
-        return {
-            # Le date non si ripetono dentro una finestra di sette giorni,
-            # quindi nessuna chiave puo' scavalcarne un'altra.
-            "calendario": {
-                self._etichetta(giorno.giorno): ", ".join(giorno.frazioni)
-                for giorno in giorni
-            },
-            # `da` e' oggi, ma la prima sera dell'elenco puo' essere quella di
-            # IERI, se la sua finestra scavalca la mezzanotte ed e' ancora
-            # aperta. E' roba ancora da fare: nasconderla sarebbe il difetto.
-            "da": oggi.isoformat(),
-            "a": (oggi + timedelta(days=GIORNI_SETTIMANA - 1)).isoformat(),
-            "frazioni": _frazioni_distinte(giorni),
-            "giorni": [attributi_giorno(giorno, oggi) for giorno in giorni],
-        }
 
 
 class SensoreFrazione(_SensoreBase):
@@ -395,6 +275,10 @@ class SensoreZona(_SensoreBase):
 
     _attr_translation_key = "zona"
     _attr_entity_registry_enabled_default = False
+    # Non descrive la raccolta, descrive la CONFIGURAZIONE: serve a controllare
+    # di aver preso l'indirizzo giusto. Sta nella scheda Diagnostica, che e' il
+    # posto che Home Assistant tiene per le entita' di questo genere.
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: RifiutologoCoordinator) -> None:
         """Costruisce il sensore."""

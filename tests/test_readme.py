@@ -190,17 +190,19 @@ async def test_la_card_della_settimana_si_disegna(
     await hass.async_block_till_done()
 
     entity_id = er.async_get(hass).async_get_entity_id(
-        "sensor", DOMAIN, f"{voce.entry_id}_settimana"
+        "calendar", DOMAIN, f"{voce.entry_id}_calendario"
     )
     assert entity_id is not None
 
-    blocco = next(b for b in _blocchi("yaml") if "raccolte_in_settimana" in b)
+    blocco = next(
+        b for b in _blocchi("yaml") if "type: markdown" in b and "'calendario'" in b
+    )
     contenuto = yaml.safe_load(blocco)["content"].replace(
-        "sensor.CAMBIAMI_raccolte_in_settimana", entity_id
+        "calendar.CAMBIAMI_calendario_esposizioni", entity_id
     )
     reso = Template(contenuto, hass).async_render(parse_result=False)
 
-    assert "Questa settimana: 4 sere" in reso
+    assert "Questa settimana" in reso
     assert "**gio 03/09**" in reso, f"il giorno non e' stato reso:\n{reso}"
     assert "**dom 06/09**" in reso
     assert "Indifferenziato, Organico" in reso

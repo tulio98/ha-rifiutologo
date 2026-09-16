@@ -70,32 +70,24 @@
   "entity": {
     "binary_sensor": {
       "esporre_stasera": {
-        "name": "Collection tonight"
-      },
-      "finestra_aperta": {
-        "name": "Put-out window open"
+        "name": "Set-out tonight"
       }
     },
     "calendar": {
       "raccolta": {
-        "name": "Collection"
+        "name": "Set-out calendar",
+        "state": {
+          "off": "Not now",
+          "on": "Can set out"
+        }
       }
     },
     "sensor": {
       "esposizione_stasera": {
         "name": "Waste to put out tonight"
       },
-      "giorni_alla_prossima": {
-        "name": "Days to next collection"
-      },
       "prossima_esposizione": {
-        "name": "Next put-out time"
-      },
-      "prossima_raccolta": {
-        "name": "Next collection"
-      },
-      "settimana": {
-        "name": "Collections this week"
+        "name": "Set-out start"
       },
       "zona": {
         "name": "Collection zone"

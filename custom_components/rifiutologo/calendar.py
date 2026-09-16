@@ -8,6 +8,7 @@ gestore pubblica in `pittogramma.colore`.
 from __future__ import annotations
 
 import datetime as dt
+from typing import Any
 
 from homeassistant.components.calendar import (
     DOMAIN as DOMINIO_CALENDARIO,
@@ -27,7 +28,7 @@ from .const import (
     icona_per_frazione,
 )
 from .coordinator import RifiutologoConfigEntry, RifiutologoCoordinator
-from .entity import RifiutologoEntity, collega_per_frazione
+from .entity import RifiutologoEntity, attributi_settimana, collega_per_frazione
 from .orari import apertura_conferimento, scadenza
 
 
@@ -127,13 +128,32 @@ class _CalendarioBase(RifiutologoEntity, CalendarEntity):
 
 
 class CalendarioRaccolta(_CalendarioBase):
-    """Tutte le frazioni insieme."""
+    """Tutte le frazioni insieme, e l'agenda della settimana negli attributi.
+
+    E' l'entita' che risponde a due domande con lo stesso bit: "si puo'
+    esporre adesso" - e' il suo stato, e dopo la riparazione di
+    `costruisci_eventi` e' esattamente la finestra di esposizione - e "che cosa
+    esce questa settimana", che sta negli attributi perche' un'agenda e' il
+    mestiere di un calendario.
+    """
 
     _attr_translation_key = "raccolta"
 
     def __init__(self, coordinator: RifiutologoCoordinator) -> None:
         """Costruisce il calendario complessivo."""
         super().__init__(coordinator, "calendario")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """La settimana: il calendario da leggere, e le sere per i template.
+
+        Home Assistant fonde questi sopra gli attributi suoi
+        (`message`, `start_time`, `all_day`...), e nessuna delle cinque chiavi
+        collide con quelli.
+        """
+        return attributi_settimana(
+            self.coordinator.data, dt_util.now(), self.hass.config.language
+        )
 
 
 class CalendarioFrazione(_CalendarioBase):

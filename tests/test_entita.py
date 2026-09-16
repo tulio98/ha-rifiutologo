@@ -52,6 +52,16 @@ def coordinator_chiavi(hass: HomeAssistant, voce: MockConfigEntry) -> dict[str, 
     return voce.runtime_data.data.chiavi_frazione
 
 
+def _settimana(hass: HomeAssistant, voce: MockConfigEntry):
+    """Gli attributi della settimana, che dalla 0.6.0 stanno sul CALENDARIO.
+
+    Ci stanno perche' un'agenda e' il mestiere di un calendario, e perche' il
+    sensore che li portava - "Raccolte in settimana" - si presentava come un
+    contatore e faceva credere che il numero fosse la cosa importante.
+    """
+    return _stato(hass, voce, "calendar", "calendario")
+
+
 def _stato(hass: HomeAssistant, voce: MockConfigEntry, piattaforma: str, chiave: str):
     """Ritrova lo stato di un'entita' partendo dal suo unique_id."""
     registro = er.async_get(hass)
@@ -91,8 +101,6 @@ async def test_sera_con_raccolta(
     assert binario.attributes["giorni_mancanti"] == 0
 
     assert _stato(hass, voce, "sensor", "esposizione_stasera").state == "Organico"
-    assert _stato(hass, voce, "sensor", "prossima_raccolta").state == "2026-09-03"
-    assert _stato(hass, voce, "sensor", "giorni_alla_prossima").state == "0"
 
     # device_class timestamp: lo stato e' l'istante in UTC, ma sono le 20:00 a Roma.
     prossima = _stato(hass, voce, "sensor", "prossima_esposizione")
@@ -110,8 +118,11 @@ async def test_sera_senza_raccolta(
 
     assert _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_OFF
     assert _stato(hass, voce, "sensor", "esposizione_stasera").state == "nessuna"
-    assert _stato(hass, voce, "sensor", "prossima_raccolta").state == "2026-09-06"
-    assert _stato(hass, voce, "sensor", "giorni_alla_prossima").state == "2"
+    # La prossima esposizione e' la sera del 6, non stasera.
+    prossima = _stato(hass, voce, "sensor", "prossima_esposizione")
+    assert datetime.fromisoformat(prossima.state).astimezone(ROMA).date() == date(
+        2026, 9, 6
+    )
 
 
 async def test_le_entita_si_spostano_a_mezzanotte(
@@ -298,7 +309,10 @@ async def test_bologna_resta_acceso_dopo_la_mezzanotte(
     await hass.async_block_till_done()
 
     assert _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_OFF
-    assert _stato(hass, voce, "sensor", "prossima_raccolta").state == "2026-09-06"
+    prossima = _stato(hass, voce, "sensor", "prossima_esposizione")
+    assert datetime.fromisoformat(prossima.state).astimezone(ROMA).date() == date(
+        2026, 9, 6
+    )
 
 
 async def test_faenza_scadenza_resta_giornaliera(
@@ -426,10 +440,6 @@ async def test_prossima_raccolta_non_mostra_mai_ieri(
     assert binario.state == STATE_ON
     assert binario.attributes["data"] == "2026-09-06", "la finestra di ieri e' aperta"
 
-    prossima = _stato(hass, voce, "sensor", "prossima_raccolta")
-    assert prossima.state == "2026-09-07", "la prossima raccolta non puo' essere ieri"
-    assert _stato(hass, voce, "sensor", "giorni_alla_prossima").state == "0"
-
     istante = _stato(hass, voce, "sensor", "prossima_esposizione")
     quando = datetime.fromisoformat(istante.state).astimezone(ROMA)
     assert quando.date() == date(2026, 9, 7)
@@ -545,19 +555,19 @@ async def test_niente_fascia_morta_a_modena(
     await _avvia(hass, voce)
 
     acceso = _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_ON
-    giorni = int(_stato(hass, voce, "sensor", "giorni_alla_prossima").state)
     assert not acceso, "alle 10:00 la finestra delle 00:00-07:00 e' chiusa"
-    assert giorni > 0, "e allora non puo' dire che la prossima e' oggi"
 
-    prossima = _stato(hass, voce, "sensor", "prossima_raccolta").state
-    assert prossima > "2026-09-03", f"prossima raccolta e' {prossima}, cioe' oggi"
+    prossima = _stato(hass, voce, "sensor", "prossima_esposizione")
+    quando = datetime.fromisoformat(prossima.state).astimezone(ROMA)
+    assert quando.date() > date(2026, 9, 3), (
+        f"l'inizio esposizione e' {quando}, cioe' oggi, che e' gia' passato"
+    )
 
     # E dentro la finestra le due tornano d'accordo.
     freezer.move_to(datetime(2026, 9, 3, 3, 0, tzinfo=ROMA))
     await hass.config_entries.async_reload(voce.entry_id)
     await hass.async_block_till_done()
     assert _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_ON
-    assert _stato(hass, voce, "sensor", "giorni_alla_prossima").state == "0"
 
 
 async def test_gradara_smette_di_elencare_la_frazione_scaduta(
@@ -778,13 +788,11 @@ async def test_la_settimana_elenca_le_sere(
     freezer.move_to(SERA_DI_RACCOLTA)
     await _avvia(hass, voce)
 
-    settimana = _stato(hass, voce, "sensor", "settimana")
-    assert settimana.state == "4"
+    settimana = _settimana(hass, voce)
     assert settimana.attributes["da"] == "2026-09-03"
     assert settimana.attributes["a"] == "2026-09-09"
 
     giorni = settimana.attributes["giorni"]
-    assert len(giorni) == int(settimana.state), "lo stato conta le sere dell'elenco"
     assert [g["data"] for g in giorni] == [
         "2026-09-03",
         "2026-09-06",
@@ -810,7 +818,7 @@ async def test_la_settimana_non_contraddice_stasera(
     freezer.move_to(datetime(2026, 9, 3, 23, 0, tzinfo=ROMA))
     await _avvia(hass, voce)
 
-    giorni = _stato(hass, voce, "sensor", "settimana").attributes["giorni"]
+    giorni = _settimana(hass, voce).attributes["giorni"]
     stasera = _stato(hass, voce, "sensor", "esposizione_stasera")
     assert stasera.state == "Organico"
     assert giorni[0]["data"] == stasera.attributes["data"] == "2026-09-03"
@@ -823,8 +831,7 @@ async def test_la_settimana_non_contraddice_stasera(
     async_fire_time_changed(hass, dopo)
     await hass.async_block_till_done()
 
-    settimana = _stato(hass, voce, "sensor", "settimana")
-    assert settimana.state == "4"
+    settimana = _settimana(hass, voce)
     assert [g["data"] for g in settimana.attributes["giorni"]] == [
         "2026-09-06",
         "2026-09-08",
@@ -848,7 +855,7 @@ async def test_la_settimana_tiene_la_sera_di_ieri_ancora_aperta(
     freezer.move_to(datetime(2026, 9, 4, 2, 0, tzinfo=ROMA))
     await _avvia(hass, voce)
 
-    settimana = _stato(hass, voce, "sensor", "settimana")
+    settimana = _settimana(hass, voce)
     assert settimana.attributes["da"] == "2026-09-04"
     giorni = settimana.attributes["giorni"]
     assert giorni[0]["data"] == "2026-09-03", "la finestra di ieri chiude alle 06:00"
@@ -872,7 +879,7 @@ async def test_la_settimana_perde_la_frazione_scaduta(
     freezer.move_to(datetime(2026, 9, 8, 22, 0, tzinfo=ROMA))
     await _avvia(hass, voce)
 
-    prima = _stato(hass, voce, "sensor", "settimana").attributes["giorni"]
+    prima = _settimana(hass, voce).attributes["giorni"]
     assert prima[0]["frazioni"] == ["Indifferenziato", "Organico"]
 
     dopo = datetime(2026, 9, 8, 23, 30, tzinfo=ROMA)
@@ -880,7 +887,7 @@ async def test_la_settimana_perde_la_frazione_scaduta(
     async_fire_time_changed(hass, dopo)
     await hass.async_block_till_done()
 
-    settimana = _stato(hass, voce, "sensor", "settimana")
+    settimana = _settimana(hass, voce)
     giorni = settimana.attributes["giorni"]
     assert giorni[0]["data"] == "2026-09-08"
     assert giorni[0]["frazioni"] == ["Organico"]
@@ -902,10 +909,10 @@ async def test_la_settimana_senza_raccolte_dice_zero(
     freezer.move_to(SERA_DI_RACCOLTA)
     await _avvia(hass, voce)
 
-    settimana = _stato(hass, voce, "sensor", "settimana")
-    assert settimana.state == "0"
+    settimana = _settimana(hass, voce)
     assert settimana.attributes["giorni"] == []
     assert settimana.attributes["frazioni"] == []
+    assert settimana.attributes["calendario"] == {}
 
 
 # --- un sensore per ogni frazione --------------------------------------------
@@ -1042,10 +1049,7 @@ async def test_spegnere_i_sensori_per_frazione_li_toglie_dal_registro(
     }
     for chiave in (
         "esposizione_stasera",
-        "prossima_raccolta",
         "prossima_esposizione",
-        "giorni_alla_prossima",
-        "settimana",
         "zona",
     ):
         assert f"{voce.entry_id}_{chiave}" in rimasti, (
@@ -1053,20 +1057,24 @@ async def test_spegnere_i_sensori_per_frazione_li_toglie_dal_registro(
         )
 
 
-# --- la finestra aperta, che non e' "stasera" --------------------------------
+# --- il calendario dice se si puo' esporre ADESSO ----------------------------
 
 
-async def test_i_due_binary_sensor_non_dicono_la_stessa_cosa(
+async def test_il_calendario_e_stasera_non_dicono_la_stessa_cosa(
     hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
 ) -> None:
-    """Alle 18:00 tocca stasera, ma il sacco fuori adesso e' fuori regolamento."""
+    """Alle 18:00 tocca stasera, ma il sacco fuori adesso e' fuori regolamento.
+
+    Sono le due domande che prima si confondevano perche' entrambe le righe
+    dicevano "Acceso": il calendario risponde a "posso esporre ADESSO", il
+    binario a "stasera tocca, e sono ancora in tempo".
+    """
     freezer.move_to(SERA_DI_RACCOLTA)
     await _avvia(hass, voce)
 
     assert _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_ON
-    finestra = _stato(hass, voce, "binary_sensor", "finestra_aperta")
-    assert finestra.state == STATE_OFF, "l'esposizione comincia alle 20:00"
-    assert finestra.attributes["frazioni"] == []
+    calendario = _stato(hass, voce, "calendar", "calendario")
+    assert calendario.state == STATE_OFF, "l'esposizione comincia alle 20:00"
 
     # Alle 20:00 si apre, e allora dicono la stessa cosa.
     apre = datetime(2026, 9, 3, 20, 0, tzinfo=ROMA)
@@ -1074,9 +1082,9 @@ async def test_i_due_binary_sensor_non_dicono_la_stessa_cosa(
     async_fire_time_changed(hass, apre)
     await hass.async_block_till_done()
 
-    finestra = _stato(hass, voce, "binary_sensor", "finestra_aperta")
-    assert finestra.state == STATE_ON
-    assert finestra.attributes["frazioni"] == ["Organico"]
+    calendario = _stato(hass, voce, "calendar", "calendario")
+    assert calendario.state == STATE_ON
+    assert calendario.attributes["message"] == "Organico"
     assert _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_ON
 
     # A mezzanotte si chiudono tutte e due.
@@ -1085,11 +1093,11 @@ async def test_i_due_binary_sensor_non_dicono_la_stessa_cosa(
     async_fire_time_changed(hass, chiude)
     await hass.async_block_till_done()
 
-    assert _stato(hass, voce, "binary_sensor", "finestra_aperta").state == STATE_OFF
+    assert _stato(hass, voce, "calendar", "calendario").state == STATE_OFF
     assert _stato(hass, voce, "binary_sensor", "esporre_stasera").state == STATE_OFF
 
 
-async def test_la_finestra_si_apre_da_sola_senza_richiamare_il_gestore(
+async def test_il_calendario_si_apre_da_solo_senza_richiamare_il_gestore(
     hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
 ) -> None:
     """Il risveglio all'apertura c'e' gia': va solo verificato che ci sia."""
@@ -1097,19 +1105,19 @@ async def test_la_finestra_si_apre_da_sola_senza_richiamare_il_gestore(
     freezer.move_to(prima)
     await _avvia(hass, voce)
     scarichi = sum(1 for c in gestore.mock_calls if "getCalendarioPap.php" in str(c[1]))
-    assert _stato(hass, voce, "binary_sensor", "finestra_aperta").state == STATE_OFF
+    assert _stato(hass, voce, "calendar", "calendario").state == STATE_OFF
 
     apre = datetime(2026, 9, 3, 20, 0, tzinfo=ROMA)
     freezer.move_to(apre)
     async_fire_time_changed(hass, apre)
     await hass.async_block_till_done()
 
-    assert _stato(hass, voce, "binary_sensor", "finestra_aperta").state == STATE_ON
+    assert _stato(hass, voce, "calendar", "calendario").state == STATE_ON
     dopo = sum(1 for c in gestore.mock_calls if "getCalendarioPap.php" in str(c[1]))
     assert dopo == scarichi, "un confine di giornata non e' un dato nuovo"
 
 
-async def test_un_termine_apre_la_finestra_a_mezzanotte(
+async def test_un_termine_vale_da_mezzanotte(
     hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
 ) -> None:
     """A Faenza "entro le 04:00" non e' un'apertura: si puo' esporre tutto il giorno."""
@@ -1118,13 +1126,13 @@ async def test_un_termine_apre_la_finestra_a_mezzanotte(
     freezer.move_to(mattina)
     await _avvia(hass, voce)
 
-    finestra = _stato(hass, voce, "binary_sensor", "finestra_aperta")
-    assert finestra.state == STATE_ON, "nessun'ora prima della quale sia vietato"
-    assert finestra.attributes["frazioni"] == ["Indifferenziato"]
-    assert finestra.attributes["orario_esposizione"] == "entro le 04:00"
+    calendario = _stato(hass, voce, "calendar", "calendario")
+    assert calendario.state == STATE_ON, "nessun'ora prima della quale sia vietato"
+    assert calendario.attributes["message"] == "Indifferenziato"
+    assert calendario.attributes["all_day"] is True, "un termine non e' una durata"
 
 
-async def test_la_finestra_di_bologna_e_aperta_alle_due_di_notte(
+async def test_bologna_e_ancora_aperta_alle_due_di_notte(
     hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
 ) -> None:
     """Dove scavalca la mezzanotte, alle due si puo' ancora uscire davvero."""
@@ -1135,16 +1143,18 @@ async def test_la_finestra_di_bologna_e_aperta_alle_due_di_notte(
     freezer.move_to(notte)
     await _avvia(hass, voce)
 
-    finestra = _stato(hass, voce, "binary_sensor", "finestra_aperta")
-    assert finestra.state == STATE_ON
-    assert finestra.attributes["data"] == "2026-09-03", "e' la sera di ieri"
+    calendario = _stato(hass, voce, "calendar", "calendario")
+    assert calendario.state == STATE_ON
+    assert calendario.attributes["start_time"] == "2026-09-03 20:00:00", (
+        "l'evento in corso e' quello di ieri sera"
+    )
 
     # Alle sette e' finita.
     mattina = datetime(2026, 9, 4, 7, 0, tzinfo=ROMA)
     freezer.move_to(mattina)
     async_fire_time_changed(hass, mattina)
     await hass.async_block_till_done()
-    assert _stato(hass, voce, "binary_sensor", "finestra_aperta").state == STATE_OFF
+    assert _stato(hass, voce, "calendar", "calendario").state == STATE_OFF
 
 
 async def test_frazione_fuori_orizzonte_non_inventa_una_data(
@@ -1311,7 +1321,7 @@ async def test_il_calendario_della_settimana_si_legge(
     freezer.move_to(SERA_DI_RACCOLTA)
     await _avvia(hass, voce)
 
-    settimana = _stato(hass, voce, "sensor", "settimana")
+    settimana = _settimana(hass, voce)
     calendario = settimana.attributes["calendario"]
 
     assert calendario == {
@@ -1342,11 +1352,11 @@ async def test_il_calendario_non_puo_dissentire_dall_elenco(
     freezer.move_to(SERA_DI_RACCOLTA)
     await _avvia(hass, voce)
 
-    settimana = _stato(hass, voce, "sensor", "settimana")
+    settimana = _settimana(hass, voce)
     calendario = settimana.attributes["calendario"]
     giorni = settimana.attributes["giorni"]
 
-    assert len(calendario) == len(giorni) == int(settimana.state)
+    assert len(calendario) == len(giorni)
     for etichetta, frazioni in zip(calendario, giorni, strict=True):
         assert calendario[etichetta] == ", ".join(frazioni["frazioni"])
         # E l'etichetta contiene davvero il giorno di quella sera.
@@ -1377,7 +1387,7 @@ async def test_i_nomi_dei_giorni_seguono_la_lingua_di_home_assistant(
     freezer.move_to(SERA_DI_RACCOLTA)
     await _avvia(hass, voce)
 
-    calendario = _stato(hass, voce, "sensor", "settimana").attributes["calendario"]
+    calendario = _settimana(hass, voce).attributes["calendario"]
     assert next(iter(calendario)) == atteso, lingua
 
 
@@ -1390,9 +1400,9 @@ async def test_il_calendario_di_una_settimana_vuota_e_vuoto(
     freezer.move_to(SERA_DI_RACCOLTA)
     await _avvia(hass, voce)
 
-    settimana = _stato(hass, voce, "sensor", "settimana")
-    assert settimana.state == "0"
+    settimana = _settimana(hass, voce)
     assert settimana.attributes["calendario"] == {}
+    assert settimana.state == STATE_OFF, "e nessun evento in corso"
 
 
 async def test_il_calendario_scorre_con_la_mezzanotte(
@@ -1402,17 +1412,14 @@ async def test_il_calendario_scorre_con_la_mezzanotte(
     await _lingua(hass, "it")
     freezer.move_to(datetime(2026, 9, 3, 23, 0, tzinfo=ROMA))
     await _avvia(hass, voce)
-    assert (
-        "gio 03/09"
-        in _stato(hass, voce, "sensor", "settimana").attributes["calendario"]
-    )
+    assert "gio 03/09" in _settimana(hass, voce).attributes["calendario"]
 
     dopo = datetime(2026, 9, 4, 0, 30, tzinfo=ROMA)
     freezer.move_to(dopo)
     async_fire_time_changed(hass, dopo)
     await hass.async_block_till_done()
 
-    calendario = _stato(hass, voce, "sensor", "settimana").attributes["calendario"]
+    calendario = _settimana(hass, voce).attributes["calendario"]
     assert list(calendario) == [
         "dom 06/09",
         "mar 08/09",
@@ -1436,7 +1443,7 @@ async def test_il_calendario_mostra_solo_le_frazioni_ancora_aperte(
     freezer.move_to(datetime(2026, 9, 8, 22, 0, tzinfo=ROMA))
     await _avvia(hass, voce)
     assert (
-        _stato(hass, voce, "sensor", "settimana").attributes["calendario"]["mar 08/09"]
+        _settimana(hass, voce).attributes["calendario"]["mar 08/09"]
         == "Indifferenziato, Organico"
     )
 
@@ -1445,7 +1452,7 @@ async def test_il_calendario_mostra_solo_le_frazioni_ancora_aperte(
     async_fire_time_changed(hass, dopo)
     await hass.async_block_till_done()
 
-    calendario = _stato(hass, voce, "sensor", "settimana").attributes["calendario"]
+    calendario = _settimana(hass, voce).attributes["calendario"]
     assert calendario["mar 08/09"] == "Organico"
 
 
@@ -1487,3 +1494,81 @@ async def test_il_colore_ufficiale_arriva_fino_al_registro(
         assert opzioni == {"calendar": {"color": colore}}, (
             f"{frazione}: il colore non e' arrivato al registro ({opzioni})"
         )
+
+
+# --- la migrazione: le entita' ritirate ---------------------------------------
+
+
+async def test_le_entita_ritirate_spariscono_dal_registro(
+    hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
+) -> None:
+    """Chi aggiorna non deve ritrovarsi quattro righe grigie per sempre.
+
+    Home Assistant ripulisce il registro da solo soltanto quando si rimuove
+    l'intera voce: un'entita' che l'integrazione smette di creare resta li', in
+    stato "non disponibile", cioe' peggio del disordine che si voleva togliere.
+
+    E si guarda che la pulizia NON prenda `prossima_esposizione`, che comincia
+    con le stesse nove lettere di `prossima_raccolta`: con un confronto per
+    prefisso - che e' come funziona la pulizia dei sensori per frazione - si
+    porterebbe via una delle entita' che restano.
+    """
+    freezer.move_to(SERA_DI_RACCOLTA)
+    voce.add_to_hass(hass)
+
+    # Le quattro di prima, come le avrebbe lasciate una versione precedente.
+    registro = er.async_get(hass)
+    ritirate = {}
+    for dominio, chiave in (
+        ("binary_sensor", "finestra_aperta"),
+        ("sensor", "prossima_raccolta"),
+        ("sensor", "giorni_alla_prossima"),
+        ("sensor", "settimana"),
+    ):
+        voce_registro = registro.async_get_or_create(
+            dominio,
+            DOMAIN,
+            f"{voce.entry_id}_{chiave}",
+            config_entry=voce,
+            suggested_object_id=f"vecchia_{chiave}",
+        )
+        ritirate[chiave] = voce_registro.entity_id
+
+    await hass.config.async_set_time_zone("Europe/Rome")
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    for chiave, entity_id in ritirate.items():
+        assert registro.async_get(entity_id) is None, f"{chiave} e' rimasta"
+
+    # E le entita' di oggi ci sono tutte, compresa quella col nome che assomiglia.
+    for dominio, chiave in (
+        ("calendar", "calendario"),
+        ("binary_sensor", "esporre_stasera"),
+        ("sensor", "esposizione_stasera"),
+        ("sensor", "prossima_esposizione"),
+    ):
+        assert (
+            registro.async_get_entity_id(dominio, DOMAIN, f"{voce.entry_id}_{chiave}")
+            is not None
+        ), f"la pulizia si e' portata via {chiave}"
+
+
+async def test_la_pulizia_delle_ritirate_e_idempotente(
+    hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
+) -> None:
+    """Dal secondo avvio non c'e' piu' niente da togliere, e non deve rompersi."""
+    freezer.move_to(SERA_DI_RACCOLTA)
+    await _avvia(hass, voce)
+    registro = er.async_get(hass)
+    prima = {
+        e.entity_id for e in er.async_entries_for_config_entry(registro, voce.entry_id)
+    }
+
+    await hass.config_entries.async_reload(voce.entry_id)
+    await hass.async_block_till_done()
+
+    dopo = {
+        e.entity_id for e in er.async_entries_for_config_entry(registro, voce.entry_id)
+    }
+    assert dopo == prima

@@ -70,32 +70,24 @@
   "entity": {
     "binary_sensor": {
       "esporre_stasera": {
-        "name": "Raccolta stasera"
-      },
-      "finestra_aperta": {
-        "name": "Finestra di esposizione aperta"
+        "name": "Esposizione stasera"
       }
     },
     "calendar": {
       "raccolta": {
-        "name": "Raccolta"
+        "name": "Calendario esposizioni",
+        "state": {
+          "off": "Non adesso",
+          "on": "Si puo' esporre"
+        }
       }
     },
     "sensor": {
       "esposizione_stasera": {
         "name": "Da esporre stasera"
       },
-      "giorni_alla_prossima": {
-        "name": "Giorni alla prossima"
-      },
       "prossima_esposizione": {
-        "name": "Prossima esposizione"
-      },
-      "prossima_raccolta": {
-        "name": "Prossima raccolta"
-      },
-      "settimana": {
-        "name": "Raccolte in settimana"
+        "name": "Inizio esposizione"
       },
       "zona": {
         "name": "Zona di raccolta"

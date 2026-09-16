@@ -12,6 +12,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
 from .coordinator import RifiutologoConfigEntry, RifiutologoCoordinator
+from .entity import rimuovi_entita_ritirate
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
@@ -28,6 +29,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: RifiutologoConfigEntry) 
     await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
+
+    # Prima delle piattaforme, e una volta sola: le entita' che le versioni
+    # precedenti creavano e questa non crea piu'. Se restassero, sarebbero righe
+    # "non disponibile" per sempre in fondo alla pagina del dispositivo.
+    rimuovi_entita_ritirate(hass, entry)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 

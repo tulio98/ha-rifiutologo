@@ -6,12 +6,6 @@
         "state": {
           "on": "mdi:trash-can"
         }
-      },
-      "finestra_aperta": {
-        "default": "mdi:door-closed",
-        "state": {
-          "on": "mdi:door-open"
-        }
       }
     },
     "calendar": {
@@ -20,17 +14,8 @@
       }
     },
     "sensor": {
-      "giorni_alla_prossima": {
-        "default": "mdi:calendar-clock"
-      },
       "prossima_esposizione": {
         "default": "mdi:clock-alert-outline"
-      },
-      "prossima_raccolta": {
-        "default": "mdi:calendar-arrow-right"
-      },
-      "settimana": {
-        "default": "mdi:calendar-week"
       },
       "zona": {
         "default": "mdi:map-marker-radius"
