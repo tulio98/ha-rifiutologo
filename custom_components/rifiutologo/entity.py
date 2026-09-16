@@ -81,9 +81,17 @@ def attributi_giorno(giorno: GiornoRaccolta | None, oggi: date) -> dict[str, Any
             c.frazione: c.colore for c in giorno.conferimenti if c.colore is not None
         },
         "data": giorno.giorno.isoformat(),
-        # ISO: 1 e' lunedi', 7 e' domenica. Il numero e non il nome, perche' il
-        # nome andrebbe scritto in una lingua sola e gli attributi non si
-        # traducono; il README mostra come girarlo in italiano in tre righe.
+        # ISO: 1 e' lunedi', 7 e' domenica. Qui va il NUMERO perche' questo
+        # attributo lo leggono i template, e un numero non cambia con la lingua
+        # di chi guarda. Il nome del giorno, per chi legge a occhio, sta
+        # nell'attributo `calendario` del sensore della settimana, e li' segue
+        # `hass.config.language`.
+        #
+        # (Un commento precedente diceva che "gli attributi non si traducono":
+        # era falso. Home Assistant traduce il NOME di un attributo, e anche il
+        # suo valore quando e' preso da un elenco fisso dichiarato nello
+        # strings.json - schema `state_attributes` in hassfest/translations.py.
+        # Quello che non si puo' tradurre e' un valore libero come una data.)
         "giorno_settimana": giorno.giorno.isoweekday(),
         # Zero vuol dire stasera. Non scende sotto zero: quando la finestra
         # scavalca la mezzanotte il giorno di esposizione resta "adesso", non

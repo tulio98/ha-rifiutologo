@@ -59,6 +59,37 @@ PROSSIME_DA_ELENCARE: Final = 5
 # coordinator per il perche' di quello scambio.
 CADENZA_RIALLINEAMENTO: Final = 14
 
+# Abbreviazioni dei giorni, per l'attributo che si legge a occhio. Stanno qui e
+# non nei file di traduzione perche' NON sono nomi di entita' ne' di attributi:
+# sono VALORI, e Home Assistant traduce i valori solo quando sono presi da un
+# elenco fisso dichiarato nello strings.json. Una data lo diventerebbe solo
+# elencando tutti i giorni dell'anno.
+#
+# L'indice e' `isoweekday() - 1`: 0 e' lunedi', 6 e' domenica.
+GIORNI_ABBREVIATI: Final[dict[str, tuple[str, ...]]] = {
+    "it": ("lun", "mar", "mer", "gio", "ven", "sab", "dom"),
+    "en": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
+}
+
+LINGUA_DI_RIPIEGO: Final = "en"
+"""Con una lingua che l'integrazione non parla si ripiega sull'inglese.
+
+E' quello che fa Home Assistant con qualunque testo non tradotto: meglio una
+riga in inglese che una data nuda, e meglio l'inglese che l'italiano imposto a
+chi non l'ha scelto.
+"""
+
+
+def giorni_abbreviati(lingua: str | None) -> tuple[str, ...]:
+    """Le abbreviazioni dei giorni nella lingua di Home Assistant.
+
+    La lingua arriva come "it", "en", ma anche come "it-IT" o "pt-BR": si guarda
+    solo la parte prima del trattino, che e' quella che sceglie la lingua.
+    """
+    radice = (lingua or LINGUA_DI_RIPIEGO).split("-")[0].casefold()
+    return GIORNI_ABBREVIATI.get(radice, GIORNI_ABBREVIATI[LINGUA_DI_RIPIEGO])
+
+
 ATTRIBUTION: Final = "Dati forniti da Il Rifiutologo - Gruppo Hera"
 MANUFACTURER: Final = "Gruppo Hera"
 

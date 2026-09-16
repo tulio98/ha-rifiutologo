@@ -1287,3 +1287,163 @@ async def test_la_pulizia_resta_dentro_la_propria_piattaforma(
     assert registro.async_get(intruso.entity_id) is not None, (
         "la pulizia dei sensori si e' portata via un calendario"
     )
+
+
+# --- il calendario che si legge a occhio -------------------------------------
+
+
+async def _lingua(hass: HomeAssistant, codice: str) -> None:
+    """Imposta la lingua di Home Assistant, che decide i nomi dei giorni."""
+    await hass.config.async_update(language=codice)
+
+
+async def test_il_calendario_della_settimana_si_legge(
+    hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
+) -> None:
+    """Un dizionario piatto giorno -> frazioni, che e' la forma che si legge.
+
+    E' la risposta alla lamentela vera: aprendo l'entita' si vedeva "4" e un
+    blocco di YAML. Home Assistant rende un attributo che contiene dizionari
+    come un blocco YAML e una lista di stringhe come una riga sola di virgole:
+    il dizionario piatto e' l'unica forma che venga fuori a righe.
+    """
+    await _lingua(hass, "it")
+    freezer.move_to(SERA_DI_RACCOLTA)
+    await _avvia(hass, voce)
+
+    settimana = _stato(hass, voce, "sensor", "settimana")
+    calendario = settimana.attributes["calendario"]
+
+    assert calendario == {
+        "gio 03/09": "Organico",
+        "dom 06/09": "Organico",
+        "mar 08/09": "Indifferenziato, Organico",
+        "mer 09/09": "Carta",
+    }
+    # L'ordine e' quello del calendario, non quello di un dizionario qualunque:
+    # chi lo legge lo legge dall'alto.
+    assert list(calendario) == [
+        "gio 03/09",
+        "dom 06/09",
+        "mar 08/09",
+        "mer 09/09",
+    ]
+
+
+async def test_il_calendario_non_puo_dissentire_dall_elenco(
+    hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
+) -> None:
+    """Due forme della stessa settimana: devono raccontare la stessa cosa.
+
+    `calendario` e' per gli occhi, `giorni` per i template. Se divergessero,
+    l'utente leggerebbe una settimana e la sua automazione ne userebbe un'altra.
+    """
+    await _lingua(hass, "it")
+    freezer.move_to(SERA_DI_RACCOLTA)
+    await _avvia(hass, voce)
+
+    settimana = _stato(hass, voce, "sensor", "settimana")
+    calendario = settimana.attributes["calendario"]
+    giorni = settimana.attributes["giorni"]
+
+    assert len(calendario) == len(giorni) == int(settimana.state)
+    for etichetta, frazioni in zip(calendario, giorni, strict=True):
+        assert calendario[etichetta] == ", ".join(frazioni["frazioni"])
+        # E l'etichetta contiene davvero il giorno di quella sera.
+        assert etichetta.endswith(
+            datetime.fromisoformat(frazioni["data"]).strftime("%d/%m")
+        )
+
+
+@pytest.mark.parametrize(
+    "caso",
+    [
+        # italiano; solo la parte prima del trattino sceglie la lingua;
+        # inglese e la sua variante; e una lingua che non parliamo, che
+        # ripiega sull'inglese come fa Home Assistant con ogni testo mancante.
+        ("it", "gio 03/09"),
+        ("it-IT", "gio 03/09"),
+        ("en", "Thu 03/09"),
+        ("en-GB", "Thu 03/09"),
+        ("de", "Thu 03/09"),
+    ],
+)
+async def test_i_nomi_dei_giorni_seguono_la_lingua_di_home_assistant(
+    hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer, caso: tuple[str, str]
+) -> None:
+    """Il nome del giorno lo decide chi guarda, non chi ha scritto il codice."""
+    lingua, atteso = caso
+    await _lingua(hass, lingua)
+    freezer.move_to(SERA_DI_RACCOLTA)
+    await _avvia(hass, voce)
+
+    calendario = _stato(hass, voce, "sensor", "settimana").attributes["calendario"]
+    assert next(iter(calendario)) == atteso, lingua
+
+
+async def test_il_calendario_di_una_settimana_vuota_e_vuoto(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Nessuna raccolta: un dizionario vuoto, non una riga che finge."""
+    registra(aioclient_mock, calendario="calendario_vuoto", allegati="allegati_vuoti")
+    await _lingua(hass, "it")
+    freezer.move_to(SERA_DI_RACCOLTA)
+    await _avvia(hass, voce)
+
+    settimana = _stato(hass, voce, "sensor", "settimana")
+    assert settimana.state == "0"
+    assert settimana.attributes["calendario"] == {}
+
+
+async def test_il_calendario_scorre_con_la_mezzanotte(
+    hass: HomeAssistant, gestore, voce: MockConfigEntry, freezer
+) -> None:
+    """Passata la mezzanotte la sera di ieri esce e in fondo ne entra un'altra."""
+    await _lingua(hass, "it")
+    freezer.move_to(datetime(2026, 9, 3, 23, 0, tzinfo=ROMA))
+    await _avvia(hass, voce)
+    assert (
+        "gio 03/09"
+        in _stato(hass, voce, "sensor", "settimana").attributes["calendario"]
+    )
+
+    dopo = datetime(2026, 9, 4, 0, 30, tzinfo=ROMA)
+    freezer.move_to(dopo)
+    async_fire_time_changed(hass, dopo)
+    await hass.async_block_till_done()
+
+    calendario = _stato(hass, voce, "sensor", "settimana").attributes["calendario"]
+    assert list(calendario) == [
+        "dom 06/09",
+        "mar 08/09",
+        "mer 09/09",
+        "gio 10/09",
+    ], "il 3 e' uscito, il 10 e' entrato"
+
+
+async def test_il_calendario_mostra_solo_le_frazioni_ancora_aperte(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Se una frazione e' scaduta non deve comparire nemmeno nel calendario.
+
+    A Gradara l'8 settembre l'Indifferenziato chiude alle 23:00 e l'Organico
+    alle 06:00: dopo le 23:00 la riga deve dire una cosa sola.
+    """
+    registra(
+        aioclient_mock, calendario="calendario_gradara", allegati="allegati_gradara"
+    )
+    await _lingua(hass, "it")
+    freezer.move_to(datetime(2026, 9, 8, 22, 0, tzinfo=ROMA))
+    await _avvia(hass, voce)
+    assert (
+        _stato(hass, voce, "sensor", "settimana").attributes["calendario"]["mar 08/09"]
+        == "Indifferenziato, Organico"
+    )
+
+    dopo = datetime(2026, 9, 8, 23, 30, tzinfo=ROMA)
+    freezer.move_to(dopo)
+    async_fire_time_changed(hass, dopo)
+    await hass.async_block_till_done()
+
+    calendario = _stato(hass, voce, "sensor", "settimana").attributes["calendario"]
+    assert calendario["mar 08/09"] == "Organico"

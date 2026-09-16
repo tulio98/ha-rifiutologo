@@ -20,6 +20,7 @@ from .const import (
     DEFAULT_SENSORI_PER_FRAZIONE,
     GIORNI_SETTIMANA,
     PROSSIME_DA_ELENCARE,
+    giorni_abbreviati,
     icona_per_frazione,
 )
 from .coordinator import RifiutologoConfigEntry, RifiutologoCoordinator
@@ -218,10 +219,26 @@ class SensoreSettimana(_SensoreBase):
     """Tutte le sere di esposizione dei prossimi sette giorni, in una entita' sola.
 
     Lo stato conta le SERE, non le frazioni: due bidoni nella stessa sera fanno
-    uno, perche' la domanda a cui risponde e' quante volte si esce di casa.
-    L'elenco sta negli attributi, e ogni sera ha la stessa forma che hanno gli
-    altri sensori: una struttura sola da imparare, e nessun modo di dissentire
-    da loro visto che il metro della finestra e' lo stesso.
+    uno, perche' la domanda a cui risponde e' quante volte si esce di casa. Nello
+    stato il calendario non ci puo' stare: Home Assistant rifiuta uno stato piu'
+    lungo di 255 caratteri - scrive un errore nel log e mette l'entita' a
+    "unknown" (core.py, `validate_state`) - e una settimana fitta li supera.
+
+    Gli attributi sono due, e sono due perche' servono a due lettori diversi:
+
+    - `calendario` e' un dizionario PIATTO, "mer 16/09" -> "Indifferenziato,
+      Organico". E' quello che si legge a occhio, e la forma non e' un
+      capriccio: nella finestra dell'entita' Home Assistant rende un attributo
+      che contiene dizionari come un blocco YAML (`ha-attribute-value.ts`,
+      `isObjectValue`), e una lista di stringhe la unisce con le virgole su una
+      riga sola. Un dizionario piatto e' l'unica forma che venga fuori a righe,
+      cioe' l'unica che somigli a un calendario.
+    - `giorni` e' la stessa settimana per intero, una voce per sera con la
+      stessa forma degli altri sensori: serve ai template e alle card, che dai
+      nomi abbreviati non ricaverebbero ne' le date ne' gli orari ne' i colori.
+
+    Non sono due verita' diverse: `calendario` e' la proiezione leggibile di
+    `giorni`, calcolata dalla stessa agenda nello stesso istante.
     """
 
     _attr_translation_key = "settimana"
@@ -237,6 +254,20 @@ class SensoreSettimana(_SensoreBase):
             return None
         return len(agenda(self.coordinator.data, dt_util.now(), GIORNI_SETTIMANA))
 
+    def _etichetta(self, giorno: date) -> str:
+        """L'etichetta di una sera: "mer 16/09", come si legge su un calendario.
+
+        Il nome del giorno segue la lingua di Home Assistant, non quella di chi
+        ha scritto il codice: `hass.config.language`. Con una lingua che
+        l'integrazione non parla si ripiega sull'inglese, come fa Home Assistant
+        con qualunque testo non tradotto.
+
+        La data e' giorno/mese perche' il servizio e' italiano; l'anno non serve
+        in una finestra di sette giorni, e la data completa sta in `giorni`.
+        """
+        abbreviazioni = giorni_abbreviati(self.hass.config.language)
+        return f"{abbreviazioni[giorno.isoweekday() - 1]} {giorno:%d/%m}"
+
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """L'elenco delle sere, e le frazioni che compaiono nella settimana."""
@@ -244,6 +275,12 @@ class SensoreSettimana(_SensoreBase):
         oggi = adesso.date()
         giorni = agenda(self.coordinator.data, adesso, GIORNI_SETTIMANA)
         return {
+            # Le date non si ripetono dentro una finestra di sette giorni,
+            # quindi nessuna chiave puo' scavalcarne un'altra.
+            "calendario": {
+                self._etichetta(giorno.giorno): ", ".join(giorno.frazioni)
+                for giorno in giorni
+            },
             # `da` e' oggi, ma la prima sera dell'elenco puo' essere quella di
             # IERI, se la sua finestra scavalca la mezzanotte ed e' ancora
             # aperta. E' roba ancora da fare: nasconderla sarebbe il difetto.

@@ -181,6 +181,10 @@ async def test_la_card_della_settimana_si_disegna(
     """
     freezer.move_to(datetime(2026, 9, 3, 18, 0, tzinfo=ZoneInfo("Europe/Rome")))
     await hass.config.async_set_time_zone("Europe/Rome")
+    # Il README e' in italiano, e le etichette dei giorni seguono la lingua di
+    # Home Assistant: senza questa riga il controllo girerebbe in inglese e
+    # direbbe che la card e' rotta quando invece e' giusta.
+    await hass.config.async_update(language="it")
     voce.add_to_hass(hass)
     assert await hass.config_entries.async_setup(voce.entry_id)
     await hass.async_block_till_done()
@@ -196,8 +200,8 @@ async def test_la_card_della_settimana_si_disegna(
     )
     reso = Template(contenuto, hass).async_render(parse_result=False)
 
-    assert "Da qui a domenica: 4 sere" in reso
-    assert "**gio 03**" in reso, f"il giorno non e' stato reso:\n{reso}"
-    assert "**dom 06**" in reso
+    assert "Questa settimana: 4 sere" in reso
+    assert "**gio 03/09**" in reso, f"il giorno non e' stato reso:\n{reso}"
+    assert "**dom 06/09**" in reso
     assert "Indifferenziato, Organico" in reso
     assert "Undefined" not in reso, f"un attributo non esiste piu':\n{reso}"

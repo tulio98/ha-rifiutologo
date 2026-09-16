@@ -77,9 +77,42 @@ Lo stato conta le **sere**, non i bidoni: due frazioni la stessa sera fanno uno.
 
 | Attributo | Contenuto |
 |---|---|
+| `calendario` | **il calendario della settimana, da leggere a occhio**: `mer 16/09 → Indifferenziato, Organico` |
 | `da` / `a` | i due estremi della finestra: oggi e oggi più sei giorni |
 | `frazioni` | tutte quelle che compaiono nella settimana, nell'ordine in cui capitano |
 | `giorni` | una voce per sera, **con gli stessi attributi della tabella qui sopra** |
+
+`calendario` è un dizionario **piatto**, e la forma non è un capriccio. Aprendo l'entità,
+Home Assistant disegna così un attributo fatto di dizionari — cioè `giorni`:
+
+```text
+- frazioni:
+    - Indifferenziato
+    - Organico
+  colori:
+    Indifferenziato: '#7C7C81'
+  data: '2026-09-16'
+  …altre dodici righe, per UN giorno
+```
+
+e così un dizionario piatto — cioè `calendario`:
+
+```text
+mer 16/09: Indifferenziato, Organico
+ven 18/09: Organico
+dom 20/09: Carta
+lun 21/09: Organico
+```
+
+Una lista di stringhe finirebbe tutta su una riga sola, unita da virgole: il dizionario
+piatto è **l'unica forma che venga fuori a righe**. I due attributi non sono due verità
+diverse — `calendario` è la proiezione leggibile di `giorni`, calcolata dalla stessa
+agenda nello stesso istante — e `giorni` resta perché le date, gli orari e i colori
+dai nomi abbreviati non si ricavano.
+
+I nomi dei giorni seguono la **lingua di Home Assistant**: italiano e inglese sono
+tradotti, ogni altra lingua ripiega sull'inglese, come fa Home Assistant con qualunque
+testo che non ha.
 
 Le regole sono quelle di tutto il resto dell'integrazione, non altre:
 
@@ -371,17 +404,15 @@ E la settimana in una card sola, senza plugin e senza helper:
 type: markdown
 content: |-
   {% set s = 'sensor.CAMBIAMI_raccolte_in_settimana' %}
-  {% set nomi = ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom'] %}
-  ## Da qui a domenica: {{ states(s) }} sere
-  {% for g in state_attr(s, 'giorni') or [] -%}
-  **{{ nomi[g.giorno_settimana - 1] }} {{ g.data[8:10] }}** ·
-  {{ g.frazioni | join(', ') }}
+  ## Questa settimana: {{ states(s) }} sere
+  {% for quando, cosa in (state_attr(s, 'calendario') or {}).items() -%}
+  **{{ quando }}** · {{ cosa }}
   {% endfor %}
 ```
 
-I nomi dei giorni stanno nella lista `nomi` perché gli attributi non si traducono:
-l'integrazione pubblica il numero ISO (`1` lunedì … `7` domenica) e la lingua la
-scegli tu, cambiando quella riga.
+Niente tabella di nomi dei giorni da mantenere a mano: le etichette arrivano già
+pronte nella lingua di Home Assistant. Chi vuole i colori ufficiali, le date complete
+o gli orari passa da `giorni`, che li ha tutti.
 
 ## Come funziona sotto
 
