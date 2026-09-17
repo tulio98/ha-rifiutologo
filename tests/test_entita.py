@@ -1549,3 +1549,79 @@ async def test_la_pulizia_delle_ritirate_e_idempotente(
         e.entity_id for e in er.async_entries_for_config_entry(registro, voce.entry_id)
     }
     assert dopo == prima
+
+
+async def test_nessuna_entita_ha_lo_stesso_nome_di_un_altra(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Con tutte le opzioni accese, diciassette righe e nessun nome ripetuto.
+
+    E' il difetto che questa integrazione ha gia' commesso due volte: prima con
+    "Raccolta" e "Raccolta stasera", che nella stessa scheda dicevano entrambe
+    "Acceso"; poi accendendo insieme le due opzioni per frazione, che facevano
+    nascere un calendario "Carta" e un sensore "Carta" - uno spento e uno con
+    una data, indistinguibili nell'elenco.
+
+    Le entita' di dominio diverso finiscono nella STESSA scheda della pagina del
+    dispositivo (`SENSOR_ENTITIES` nel frontend) e sono ordinate per nome: due
+    nomi uguali diventano due righe adiacenti che non si distinguono.
+    """
+    registra(aioclient_mock)
+    await _lingua(hass, "it")
+    freezer.move_to(SERA_DI_RACCOLTA)
+    voce.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        voce,
+        options={
+            CONF_CALENDARI_PER_FRAZIONE: True,
+            CONF_SENSORI_PER_FRAZIONE: True,
+        },
+    )
+    await hass.config.async_set_time_zone("Europe/Rome")
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    registro = er.async_get(hass)
+    nomi: dict[str, list[str]] = {}
+    for e in er.async_entries_for_config_entry(registro, voce.entry_id):
+        nomi.setdefault(e.original_name, []).append(e.entity_id)
+
+    ripetuti = {n: ids for n, ids in nomi.items() if len(ids) > 1}
+    assert not ripetuti, f"nomi ripetuti: {ripetuti}"
+
+    # E sono tutte: 5 fisse + 6 calendari + 6 sensori.
+    assert len(nomi) == 17, sorted(nomi)
+    assert "Carta" in nomi, "il sensore tiene il nome nudo della frazione"
+    assert "Calendario Carta" in nomi, "il calendario si distingue dal prefisso"
+
+
+@pytest.mark.parametrize(
+    "caso",
+    [("it", "Calendario Carta"), ("en", "Calendar Carta"), ("de", "Calendar Carta")],
+)
+async def test_il_prefisso_del_calendario_segue_la_lingua(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer, caso
+) -> None:
+    """Anche il prefisso e' un testo che l'utente legge: non si scrive in italiano.
+
+    Il nome della frazione lo scrive il gestore e resta in italiano ovunque -
+    e' un nome proprio - ma la parola che gli sta davanti no.
+    """
+    lingua, atteso = caso
+    registra(aioclient_mock)
+    await _lingua(hass, lingua)
+    freezer.move_to(SERA_DI_RACCOLTA)
+    voce.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        voce, options={CONF_CALENDARI_PER_FRAZIONE: True}
+    )
+    await hass.config.async_set_time_zone("Europe/Rome")
+    assert await hass.config_entries.async_setup(voce.entry_id)
+    await hass.async_block_till_done()
+
+    registro = er.async_get(hass)
+    nomi = {
+        e.original_name
+        for e in er.async_entries_for_config_entry(registro, voce.entry_id)
+    }
+    assert atteso in nomi, sorted(nomi)

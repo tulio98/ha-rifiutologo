@@ -24,6 +24,7 @@ from .const import (
     CONF_CALENDARI_PER_FRAZIONE,
     DEFAULT_CALENDARI_PER_FRAZIONE,
     icona_per_frazione,
+    prefisso_calendario,
 )
 from .coordinator import RifiutologoConfigEntry, RifiutologoCoordinator
 from .entity import RifiutologoEntity, attributi_settimana, collega_per_frazione
@@ -147,7 +148,13 @@ class CalendarioRaccolta(_CalendarioBase):
 
 
 class CalendarioFrazione(_CalendarioBase):
-    """Una sola frazione, col colore che le da' il gestore."""
+    """Una sola frazione, col colore che le da' il gestore.
+
+    Si chiama "Calendario Carta" e non "Carta" perche' accendendo anche l'altra
+    opzione nasce un SENSORE con lo stesso nome, e due righe uguali nella stessa
+    scheda - una accesa e una con una data - non si distinguono. Il prefisso
+    segue la lingua di Home Assistant.
+    """
 
     def __init__(
         self,
@@ -159,7 +166,9 @@ class CalendarioFrazione(_CalendarioBase):
         """Costruisce il calendario di una frazione."""
         super().__init__(coordinator, f"calendario_{chiave}")
         self._frazione = frazione
-        self._attr_name = frazione
+        self._attr_name = (
+            f"{prefisso_calendario(coordinator.hass.config.language)} {frazione}"
+        )
         self._attr_icon = icona_per_frazione(frazione)
         if colore is not None:
             # Home Assistant colora l'entita' calendar da 2026.6 in poi; sulle

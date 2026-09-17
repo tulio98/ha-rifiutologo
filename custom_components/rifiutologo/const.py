@@ -69,6 +69,22 @@ GIORNI_ABBREVIATI: Final[dict[str, tuple[str, ...]]] = {
     "en": ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"),
 }
 
+PREFISSO_CALENDARIO: Final[dict[str, str]] = {
+    "it": "Calendario",
+    "en": "Calendar",
+}
+"""Come si chiama un calendario, per distinguerlo dal sensore della stessa frazione.
+
+Accendendo tutte e due le opzioni, ogni frazione nasce due volte: un calendario
+e un sensore. Senza questo prefisso avrebbero lo stesso identico nome - due
+righe "Carta" nella stessa scheda, una accesa e una con una data - ed e' il
+difetto che questa integrazione ha gia' commesso una volta con "Raccolta" e
+"Raccolta stasera".
+
+Sta qui e non nei file di traduzione perche' il nome di queste entita' lo scrive
+il GESTORE, non noi: non hanno una translation_key su cui appendere un nome.
+"""
+
 LINGUA_DI_RIPIEGO: Final = "en"
 """Con una lingua che l'integrazione non parla si ripiega sull'inglese.
 
@@ -78,14 +94,25 @@ chi non l'ha scelto.
 """
 
 
+def _radice(lingua: str | None) -> str:
+    """La parte di codice lingua che sceglie la lingua: "it" da "it-IT"."""
+    return (lingua or LINGUA_DI_RIPIEGO).split("-")[0].casefold()
+
+
+def prefisso_calendario(lingua: str | None) -> str:
+    """La parola "Calendario" nella lingua di Home Assistant."""
+    return PREFISSO_CALENDARIO.get(
+        _radice(lingua), PREFISSO_CALENDARIO[LINGUA_DI_RIPIEGO]
+    )
+
+
 def giorni_abbreviati(lingua: str | None) -> tuple[str, ...]:
     """Le abbreviazioni dei giorni nella lingua di Home Assistant.
 
     La lingua arriva come "it", "en", ma anche come "it-IT" o "pt-BR": si guarda
     solo la parte prima del trattino, che e' quella che sceglie la lingua.
     """
-    radice = (lingua or LINGUA_DI_RIPIEGO).split("-")[0].casefold()
-    return GIORNI_ABBREVIATI.get(radice, GIORNI_ABBREVIATI[LINGUA_DI_RIPIEGO])
+    return GIORNI_ABBREVIATI.get(_radice(lingua), GIORNI_ABBREVIATI[LINGUA_DI_RIPIEGO])
 
 
 ATTRIBUTION: Final = "Dati forniti da Il Rifiutologo - Gruppo Hera"

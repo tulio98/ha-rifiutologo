@@ -66,9 +66,10 @@ Domani mattina alle 10 le stesse righe dicono **«Non adesso» · «nessuna» ·
 > `sensor.<indirizzo>_waste_to_put_out_tonight`. Negli esempi qui sotto c'è `CAMBIAMI`:
 > aprine il dispositivo e copia gli id veri.
 >
-> Fanno eccezione le entità **per frazione**: il loro nome lo scrive il gestore
-> (`Organico`, `Imballaggi in vetro`), quindi il loro `entity_id` è lo stesso in tutte le
-> lingue.
+> Le entità **per frazione** sono a metà: il nome della frazione lo scrive il gestore
+> (`Organico`, `Imballaggi in vetro`) e resta uguale in ogni lingua, ma il calendario porta
+> davanti la parola «Calendario» — `Calendar` in inglese — per non chiamarsi come il
+> sensore della stessa frazione.
 
 Le entità che descrivono **una sera di raccolta** — *Esposizione stasera*, *Da esporre
 stasera* e *Inizio esposizione* — portano con sé questi attributi:
@@ -174,6 +175,10 @@ non esiste nella 2026.1 ed esiste nella 2026.2 — e sulla 2026.1, che è il min
 integrazione dichiara, i calendari separati funzionano lo stesso, semplicemente senza tinta.
 
 ### Un sensore per ogni frazione
+
+> Le due opzioni per frazione si possono accendere **insieme**: nascono un calendario e un
+> sensore per ogni tipo di rifiuto, e si distinguono dal nome — *Carta* è il sensore, che
+> dice la data; *Calendario Carta* è il calendario, che serve alla card a colori.
 
 Attivando **«Un sensore per ogni frazione»** nasce un sensore per tipo di rifiuto — a
 Padova sei: *Organico*, *Indifferenziato*, *Carta*, *Lattine*, *Imballaggi in plastica*,
@@ -500,12 +505,12 @@ type: calendar
 title: La settimana dei rifiuti
 initial_view: listWeek
 entities:
-  - calendar.CAMBIAMI_organico
-  - calendar.CAMBIAMI_indifferenziato
-  - calendar.CAMBIAMI_carta
-  - calendar.CAMBIAMI_lattine
-  - calendar.CAMBIAMI_imballaggi_in_plastica
-  - calendar.CAMBIAMI_imballaggi_in_vetro
+  - calendar.CAMBIAMI_calendario_organico
+  - calendar.CAMBIAMI_calendario_indifferenziato
+  - calendar.CAMBIAMI_calendario_carta
+  - calendar.CAMBIAMI_calendario_lattine
+  - calendar.CAMBIAMI_calendario_imballaggi_in_plastica
+  - calendar.CAMBIAMI_calendario_imballaggi_in_vetro
 ```
 
 > Il colore si scrive alla **prima creazione** dell'entità. Chi aveva già i calendari
