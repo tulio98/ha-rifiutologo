@@ -52,7 +52,8 @@ MINUTI_IN_UN_GIORNO: Final = 24 * 60
 # Un esadecimale della forma "ABC", che vale "AABBCC" come nel CSS...
 CIFRE_COLORE_CORTO: Final = 3
 # ...e la forma lunga, l'unica che Home Assistant accetta: il suo
-# validatore `cv.color_hex` vuole esattamente ^#[0-9A-F]{6}$.
+# validatore `cv.color_hex` vuole ^#[0-9A-F]{6}$, senza distinzione fra
+# maiuscole e minuscole.
 CIFRE_COLORE: Final = 6
 LUNGHEZZA_DATA_ISO: Final = 10
 

@@ -20,29 +20,33 @@ jobs:
   hacs:
     name: HACS
     runs-on: ubuntu-latest
-    # Su un repository PRIVATO questo job non puo' passare, e non per colpa del
-    # repository: hacs/action scarica i file da raw.githubusercontent.com SENZA
-    # autenticazione (repositories/base.py, get_hacs_json_raw), e li' un repo
-    # privato risponde 404. I due check che leggono il CONTENUTO dei file -
-    # hacsjson e integration_manifest - falliscono quindi con "invalid" quando in
-    # realta' il download e' tornato vuoto. Tutti gli altri sette, che passano
-    # dall'API autenticata, sono verdi. Verificato il 5 settembre 2026: 404 su
-    # hacs.json, manifest.json e README.md dal raw, e gli stessi file leggibili
-    # via API. Il job torna da solo appena il repository diventa pubblico.
+    # Finche' il repository e' PRIVATO questo job non puo' passare, e non per
+    # colpa nostra: due dei nove check leggono il CONTENUTO dei file da
+    # raw.githubusercontent.com senza autenticazione (get_hacs_json_raw chiama
+    # async_download_file, che fa session.get senza headers), e li' un repo
+    # privato risponde 404. Il download torna vuoto e il check dice "invalid".
+    # Provato sul serio il 5 settembre 2026, prima che ci fosse questo `if`:
+    # "<Integration tulio98/ha-rifiutologo> 2/9 checks failed", e i due sono
+    # hacsjson e integration_manifest. Il job torna da solo appena il repository
+    # diventa pubblico. Anche sui giri a cron `github.event.repository` c'e',
+    # quindi li' il job risulta "skipped" e non rosso.
     if: ${{ !github.event.repository.private }}
     steps:
       - uses: actions/checkout@v5
       # Niente "ignore": la pagina di HACS sull'inclusione chiede che questa
       # action passi senza errori E senza ignore. Il check "brands" e' gia'
-      # soddisfatto dall'icona versionata in custom_components/rifiutologo/brand/,
-      # che il validatore cerca in locale prima di rivolgersi a brands.home-assistant.io.
+      # soddisfatto dall'icona in custom_components/rifiutologo/brand/icon.png,
+      # che il validatore cerca nell'albero del repository prima di rivolgersi a
+      # brands.home-assistant.io.
       #
-      # Attenzione: 4 dei 10 check leggono i METADATI del repository su GitHub, non
-      # i file. Servono una descrizione, le issue abilitate e almeno un topic - e i
-      # topic generici non contano: TOPIC_FILTER in hacs/integration scarta fra gli
-      # altri "hacs", "home-assistant" e "home-assistant-custom". Qui sopravvivono
-      # "italy", "waste-collection" e "rifiuti". Vanno impostati PRIMA del primo
-      # push, o la primissima esecuzione nasce rossa senza motivo.
+      # Per un'integrazione i check sono NOVE (il decimo, "images", vale solo per
+      # plugin e temi), e cinque non guardano i file ma i METADATI su GitHub:
+      # description, topics, issues, archived e license. Vanno messi a posto PRIMA
+      # del primo push, o la primissima esecuzione nasce rossa senza motivo.
+      # Un topic qualsiasi basta: il TOPIC_FILTER di HACS, che scarta i generici
+      # come "hacs" o "home-assistant", dentro l'action non si applica
+      # (update_data filtra solo se `action` e' falso, e action.py lo mette a
+      # True); morde dentro Home Assistant, dove i topic servono a cercare.
       - uses: hacs/action@main
         with:
           category: integration

@@ -171,8 +171,10 @@ class CalendarioFrazione(_CalendarioBase):
         )
         self._attr_icon = icona_per_frazione(frazione)
         if colore is not None:
-            # Home Assistant colora l'entita' calendar da 2026.6 in poi; sulle
-            # versioni precedenti l'attributo resta li' senza fare danni.
+            # Home Assistant colora l'entita' calendar dalla 2026.2 in poi:
+            # CalendarEntity.initial_color non c'e' nel tag 2026.1.0 e c'e' nel
+            # 2026.2.0. Sulla 2026.1, che e' il minimo dichiarato, l'attributo
+            # resta li' senza fare danni.
             self._attr_initial_color = colore
 
 
