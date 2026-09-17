@@ -11,6 +11,8 @@ from datetime import datetime
 import json
 import pathlib
 import re
+import struct
+import zlib
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -207,3 +209,144 @@ async def test_la_card_della_settimana_si_disegna(
     assert "**dom 06/09**" in reso
     assert "Indifferenziato, Organico" in reso
     assert "Undefined" not in reso, f"un attributo non esiste piu':\n{reso}"
+
+
+def _decodifica_png(grezzo: bytes) -> tuple[int, int, list[list[tuple[int, ...]]]]:
+    """Un lettore PNG scritto da capo, per non verificare il generatore con se stesso.
+
+    Regge tutti e cinque i filtri di riga, anche se il generatore usa solo lo
+    zero: se un domani scrivesse i PNG in un altro modo, questo li leggerebbe
+    lo stesso, e il test resterebbe un controllo vero.
+    """
+    assert grezzo[:8] == b"\x89PNG\r\n\x1a\n", "non e' un PNG"
+    intestazione = b""
+    compressi = b""
+    i = 8
+    while i < len(grezzo):
+        (lunghezza,) = struct.unpack(">I", grezzo[i : i + 4])
+        tipo = grezzo[i + 4 : i + 8]
+        corpo = grezzo[i + 8 : i + 8 + lunghezza]
+        (firma,) = struct.unpack(">I", grezzo[i + 8 + lunghezza : i + 12 + lunghezza])
+        assert zlib.crc32(tipo + corpo) & 0xFFFFFFFF == firma, f"CRC rotto in {tipo!r}"
+        if tipo == b"IHDR":
+            intestazione = corpo
+        elif tipo == b"IDAT":
+            compressi += corpo
+        i += 12 + lunghezza
+
+    larghezza, altezza, profondita, colore, _, _, intreccio = struct.unpack(
+        ">IIBBBBB", intestazione
+    )
+    assert (profondita, colore, intreccio) == (8, 2, 0), (
+        "atteso RGB a 8 bit, non intrecciato"
+    )
+
+    canali = 3
+    passo = larghezza * canali
+    crudo = zlib.decompress(compressi)
+    precedente = bytearray(passo)
+    pixel: list[list[tuple[int, ...]]] = []
+    letti = 0
+    for _ in range(altezza):
+        filtro = crudo[letti]
+        letti += 1
+        riga = bytearray(crudo[letti : letti + passo])
+        letti += passo
+        for x in range(passo):
+            a = riga[x - canali] if x >= canali else 0
+            b = precedente[x]
+            c = precedente[x - canali] if x >= canali else 0
+            if filtro == 0:
+                aggiunta = 0
+            elif filtro == 1:
+                aggiunta = a
+            elif filtro == 2:
+                aggiunta = b
+            elif filtro == 3:
+                aggiunta = (a + b) // 2
+            elif filtro == 4:
+                da, db, dc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+                aggiunta = a if (da <= db and da <= dc) else (b if db <= dc else c)
+            else:
+                raise AssertionError(f"filtro sconosciuto: {filtro}")
+            riga[x] = (riga[x] + aggiunta) & 0xFF
+        pixel.append([tuple(riga[x : x + canali]) for x in range(0, passo, canali)])
+        precedente = riga
+    return larghezza, altezza, pixel
+
+
+def test_la_tabella_dei_colori_dice_il_vero() -> None:
+    """I colori del README sono quelli del gestore, non scelti da noi.
+
+    Il confronto e' con la fixture, che e' una risposta vera del backend per
+    l'indirizzo di prova: ogni riga della tabella deve ritrovarsi li'.
+    """
+    fixture = json.loads(
+        (RADICE / "tests" / "fixtures" / "calendario.json").read_text(encoding="utf-8")
+    )
+    veri: dict[str, str] = {}
+
+    def cammina(nodo: object) -> None:
+        if isinstance(nodo, dict):
+            # La frazione e' `macroprodotto.descrizione`, e il colore sta nel
+            # pittogramma dello stesso nodo: cosi' li legge anche api.py.
+            pittogramma = nodo.get("pittogramma")
+            if isinstance(pittogramma, dict) and nodo.get("descrizione"):
+                veri[str(nodo["descrizione"])] = str(pittogramma["colore"]).upper()
+            for valore in nodo.values():
+                cammina(valore)
+        elif isinstance(nodo, list):
+            for valore in nodo:
+                cammina(valore)
+
+    cammina(fixture)
+    assert veri, "la fixture non ha piu' i pittogrammi: non si sta guardando niente"
+
+    righe = re.findall(
+        r"^\| ([^|]+?) \| !\[\]\(docs/colori/([0-9A-F]{6})\.png\) `#([0-9A-F]{6})` \|$",
+        README,
+        re.M,
+    )
+    assert len(righe) == len(veri), (
+        f"la tabella ha {len(righe)} frazioni, il gestore ne da {len(veri)}"
+    )
+    for frazione, pastiglia, codice in righe:
+        assert pastiglia == codice, (
+            f"{frazione}: il quadratino mostra #{pastiglia} ma il codice dice #{codice}"
+        )
+        assert veri.get(frazione) == codice, (
+            f"{frazione}: il README dice #{codice}, il gestore #{veri.get(frazione)}"
+        )
+
+
+def test_ogni_pastiglia_e_davvero_di_quel_colore() -> None:
+    """Il quadratino accanto al codice deve essere proprio quel colore.
+
+    GitHub disegna il pallino accanto a `#701100` solo dentro issue e pull
+    request, non nei file: nel README il quadratino e' un PNG vero, e un PNG
+    vero puo' sbagliare colore in silenzio.
+    """
+    codici = sorted(set(re.findall(r"docs/colori/([0-9A-F]{6})\.png", README)))
+    assert codici, "il README non mostra piu' nessuna pastiglia"
+
+    for codice in codici:
+        percorso = RADICE / "docs" / "colori" / f"{codice}.png"
+        assert percorso.is_file(), f"il README mostra {percorso.name}, che non esiste"
+        larghezza, altezza, pixel = _decodifica_png(percorso.read_bytes())
+        atteso = (int(codice[0:2], 16), int(codice[2:4], 16), int(codice[4:6], 16))
+        dentro = {
+            pixel[y][x] for y in range(1, altezza - 1) for x in range(1, larghezza - 1)
+        }
+        assert dentro == {atteso}, f"{percorso.name} non e' #{codice} ma {dentro}"
+
+
+def test_le_immagini_del_readme_esistono() -> None:
+    """Un'immagine rotta nel README si vede solo su GitHub, e troppo tardi."""
+    percorsi = [
+        p
+        for p in re.findall(r"!\[[^\]]*\]\(([^)]+)\)", README)
+        if not p.startswith(("http://", "https://"))
+    ]
+    assert percorsi, "il README non ha piu' immagini locali"
+    mancanti = [p for p in percorsi if not (RADICE / p).is_file()]
+    assert not mancanti, f"immagini citate ma assenti: {mancanti}"

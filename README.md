@@ -162,12 +162,12 @@ inventato: arriva dal campo `pittogramma.colore` dell'API.
 
 | Frazione (Padova) | Colore |
 |---|---|
-| Organico | `#701100` |
-| Indifferenziato | `#7C7C81` |
-| Carta | `#0093D0` |
-| Imballaggi in vetro | `#15A53F` |
-| Lattine | `#FDB913` |
-| Imballaggi in plastica | `#FDB913` |
+| Organico | ![](docs/colori/701100.png) `#701100` |
+| Indifferenziato | ![](docs/colori/7C7C81.png) `#7C7C81` |
+| Carta | ![](docs/colori/0093D0.png) `#0093D0` |
+| Imballaggi in vetro | ![](docs/colori/15A53F.png) `#15A53F` |
+| Lattine | ![](docs/colori/FDB913.png) `#FDB913` |
+| Imballaggi in plastica | ![](docs/colori/FDB913.png) `#FDB913` |
 
 Lattine e plastica hanno lo stesso colore perché il gestore le fa esporre insieme.
 I colori li disegna Home Assistant **dalla 2026.2** in poi — `CalendarEntity.initial_color`
@@ -587,16 +587,6 @@ forma da allegare a una segnalazione.
 - **Gli indirizzi senza porta a porta non sono un guasto.** Sono la normalità in buona parte
   dei centri storici. La configurazione te lo dice subito.
 - **Le festività** non sono un caso a parte: il gestore semplicemente non pubblica quei giorni.
-
-## Progetti vicini
-
-Se ti serve solo la data e non ti interessano gli orari di esposizione né i colori, esiste già
-una strada, ed è onesto dirlo: la source **`ilrifiutologo_it`** dentro
-[mampfes/hacs_waste_collection_schedule](https://github.com/mampfes/hacs_waste_collection_schedule),
-che è già nello store HACS di serie. Fa una cosa sola — data e nome della frazione — e la fa
-bene. Questa integrazione nasce per tenersi anche il resto: la finestra di esposizione (anche
-dove scavalca la mezzanotte), i colori ufficiali, la zona, e tre tendine al posto della via da
-scrivere in maiuscolo esatto.
 
 ## Contribuire
 
