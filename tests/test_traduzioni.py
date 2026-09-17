@@ -91,3 +91,42 @@ def test_le_icone_corrispondono_a_entita_vere() -> None:
         assert set(voci) <= set(nomi.get(piattaforma, {})), (
             f"icons.json dichiara {piattaforma} inesistenti"
         )
+
+
+def _testi_piani(nodo: dict, prefisso: str = "") -> list[tuple[str, str]]:
+    """Tutte le stringhe di un file di traduzione, col loro percorso."""
+    fuori: list[tuple[str, str]] = []
+    for chiave, valore in nodo.items():
+        if isinstance(valore, dict):
+            fuori += _testi_piani(valore, prefisso + chiave + ".")
+        elif isinstance(valore, str):
+            fuori.append((prefisso + chiave, valore))
+    return fuori
+
+
+# Le parole tronche che in italiano vogliono l'accento, non l'apostrofo. Il
+# confine a destra e' `(?!\w)` e non `\b`: dopo l'apostrofo c'e' uno spazio o un
+# segno, e li' `\b` non combacia - cosi' "e' servito" viene preso e "l'elenco"
+# no, che e' esattamente la distinzione che serve.
+TRONCHE = re.compile(
+    r"\b(?:e|gia|piu|puo|perche|cosi|pero|li|societa|entita|citta|qualita"
+    r"|sara|finche|poiche|verra|meta)'(?!\w)"
+)
+
+
+def test_l_italiano_ha_gli_accenti() -> None:
+    """I testi che l'utente legge non si scrivono con l'apostrofo al posto dell'accento.
+
+    Nel codice e nei commenti l'apostrofo si usa di proposito, per tenere i
+    sorgenti in ASCII puro. Ma questi non sono commenti: sono le frasi che
+    compaiono dentro Home Assistant, e li' "e' servito" e' semplicemente
+    scritto male.
+    """
+    sbagliati = [
+        (chiave, valore)
+        for chiave, valore in _testi_piani(_testi("translations/it.json"))
+        if TRONCHE.search(valore)
+    ]
+    assert not sbagliati, "\n".join(
+        f"{c}: {TRONCHE.search(v).group()} in «{v[:70]}»" for c, v in sbagliati
+    )

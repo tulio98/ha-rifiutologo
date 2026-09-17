@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Scegli il comune",
-        "description": "Calendario della raccolta porta a porta per i comuni serviti dal Gruppo Hera e dalle sue societa' territoriali, fra cui AcegasApsAmga a Padova e Trieste.",
+        "description": "Calendario della raccolta porta a porta per i comuni serviti dal Gruppo Hera e dalle sue società territoriali, fra cui AcegasApsAmga a Padova e Trieste.",
         "data": {
           "comune": "Comune"
         },
@@ -23,7 +23,7 @@
       },
       "civico": {
         "title": "Scegli il numero civico",
-        "description": "I civici di {via}. Il turno di raccolta dipende dal civico esatto: la zona si ricava da li' e non viene mai chiesta.",
+        "description": "I civici di {via}. Il turno di raccolta dipende dal civico esatto: la zona si ricava da lì e non viene mai chiesta.",
         "data": {
           "civico": "Numero civico"
         },
@@ -34,15 +34,15 @@
     },
     "error": {
       "cannot_connect": "Non riesco a raggiungere il gestore. Riprova fra qualche minuto.",
-      "civico_sconosciuto": "Questo numero civico non e' fra quelli che il gestore elenca per questa via. Scrivilo nella casella e scegli un suggerimento.",
-      "comune_sconosciuto": "Questo comune non e' nell'elenco del gestore. Scrivi qualche lettera del nome e scegli uno dei suggerimenti.",
+      "civico_sconosciuto": "Questo numero civico non è fra quelli che il gestore elenca per questa via. Scrivilo nella casella e scegli un suggerimento.",
+      "comune_sconosciuto": "Questo comune non è nell'elenco del gestore. Scrivi qualche lettera del nome e scegli uno dei suggerimenti.",
       "comune_senza_vie": "Il gestore non elenca nessuna via per questo comune. Scegline un altro.",
-      "nessun_pap": "Questo indirizzo non ha la raccolta porta a porta: e' servito da cassonetti stradali e il gestore non pubblica alcun calendario. Controlla il civico, oppure prova un altro indirizzo.",
-      "via_sconosciuta": "Questa via non e' nell'elenco del gestore. Scrivi qualche lettera del nome - vanno bene anche quelle in mezzo, per esempio «bernardo» per «VIA BERNARDO TREVISAN» - e scegli uno dei suggerimenti.",
+      "nessun_pap": "Questo indirizzo non ha la raccolta porta a porta: è servito da cassonetti stradali e il gestore non pubblica alcun calendario. Controlla il civico, oppure prova un altro indirizzo.",
+      "via_sconosciuta": "Questa via non è nell'elenco del gestore. Scrivi qualche lettera del nome - vanno bene anche quelle in mezzo, per esempio «bernardo» per «VIA BERNARDO TREVISAN» - e scegli uno dei suggerimenti.",
       "via_senza_civici": "Il gestore non elenca nessun civico per questa via. Scegline un'altra."
     },
     "abort": {
-      "already_configured": "Questo indirizzo e' gia' configurato.",
+      "already_configured": "Questo indirizzo è già configurato.",
       "cannot_connect": "Non riesco a raggiungere il gestore. Riprova fra qualche minuto.",
       "reconfigure_successful": "Indirizzo aggiornato."
     }
@@ -58,8 +58,8 @@
           "giorni_da_mostrare": "Giorni da guardare in avanti"
         },
         "data_description": {
-          "calendari_per_frazione": "Aggiunge un'entita' calendario per ogni frazione, ciascuna col colore ufficiale del gestore. I colori li mostra Home Assistant dalla 2026.6 in poi.",
-          "sensori_per_frazione": "Aggiunge un sensore per ogni tipo di rifiuto: lo stato e' la data della sua prossima esposizione, e negli attributi ci sono i giorni mancanti, il colore ufficiale e le prossime date.",
+          "calendari_per_frazione": "Aggiunge un'entità calendario per ogni frazione, ciascuna col colore ufficiale del gestore. I colori li mostra Home Assistant dalla 2026.6 in poi.",
+          "sensori_per_frazione": "Aggiunge un sensore per ogni tipo di rifiuto: lo stato è la data della sua prossima esposizione, e negli attributi ci sono i giorni mancanti, il colore ufficiale e le prossime date.",
           "giorni_da_mostrare": "Fra due raccolte del vetro possono passare 35 giorni: un orizzonte corto rischia di nasconderlo."
         }
       }
@@ -76,7 +76,7 @@
         "name": "Calendario esposizioni",
         "state": {
           "off": "Non adesso",
-          "on": "Si puo' esporre"
+          "on": "Si può esporre"
         }
       }
     },

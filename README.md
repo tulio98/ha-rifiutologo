@@ -12,8 +12,8 @@ le entità giuste per farsi avvisare la sera in cui bisogna mettere fuori il sac
 > **In English** — Home Assistant integration for the kerbside waste collection calendar of
 > Gruppo Hera and its local companies (AcegasApsAmga in Padua and Trieste, Marche Multiservizi,
 > Hera in Emilia-Romagna): 181 Italian municipalities. It creates a calendar entity, a
-> "put it out tonight" binary sensor and four sensors. The address is picked from three
-> dropdowns, no typing. Unofficial, community-made, not affiliated with Gruppo Hera.
+> "put it out tonight" binary sensor and three sensors. The address is picked from three
+> searchable dropdowns. Unofficial, community-made, not affiliated with Gruppo Hera.
 
 ---
 
@@ -42,7 +42,8 @@ Per ogni indirizzo configurato nasce un dispositivo con queste entità:
 | **Esposizione stasera** (`binary_sensor`) | Acceso finché c'è tempo per esporre | Il mattone delle automazioni |
 | **Zona di raccolta** (`sensor`) | `Calendario Padova Q6 2026` | Controllare di aver preso il calendario giusto (diagnostica, disattivata di serie) |
 
-Quattro righe, quattro domande diverse. Stasera alle 20:20, a Padova Q2:
+Quattro sono accese di serie e rispondono a quattro domande diverse; la quinta, *Zona di
+raccolta*, è diagnostica e nasce spenta. Stasera alle 20:20, a Padova Q2, la pagina dice:
 
 ```text
 Calendario esposizioni ........ Si può esporre
@@ -64,6 +65,10 @@ Domani mattina alle 10 le stesse righe dicono **«Non adesso» · «nessuna» ·
 > dell'entità: in italiano diventano `sensor.<indirizzo>_da_esporre_stasera`, in inglese
 > `sensor.<indirizzo>_waste_to_put_out_tonight`. Negli esempi qui sotto c'è `CAMBIAMI`:
 > aprine il dispositivo e copia gli id veri.
+>
+> Fanno eccezione le entità **per frazione**: il loro nome lo scrive il gestore
+> (`Organico`, `Imballaggi in vetro`), quindi il loro `entity_id` è lo stesso in tutte le
+> lingue.
 
 Le entità che descrivono **una sera di raccolta** — *Esposizione stasera*, *Da esporre
 stasera* e *Inizio esposizione* — portano con sé questi attributi:
@@ -84,10 +89,11 @@ stasera* e *Inizio esposizione* — portano con sé questi attributi:
 
 *Zona di raccolta* espone invece `pdf`, `allegati` e `nota`.
 
-### La settimana in una entità sola
+### La settimana, negli attributi del calendario
 
-**Raccolte in settimana** risponde alla domanda «quante volte esco da qui a domenica».
-Lo stato conta le **sere**, non i bidoni: due frazioni la stessa sera fanno uno.
+**Calendario esposizioni** risponde anche alla domanda «quante volte esco da qui a
+domenica»: nei suoi attributi c'è una voce per **sera**, non per bidone — due frazioni la
+stessa sera fanno una voce sola.
 
 > **Se quello che cerchi è vedere la settimana, non è qui.** Da Home Assistant 2026 la
 > schermata che si apre cliccando un'entità non mostra **nessun** attributo: stanno
@@ -136,14 +142,16 @@ testo che non ha.
 
 Le regole sono quelle di tutto il resto dell'integrazione, non altre:
 
-- una sera già chiusa **sparisce**, anche se è quella di oggi — a Modena si espone
-  dalle 00:00 alle 07:00, e a mezzogiorno oggi è già andato;
+- una sera già chiusa **sparisce**, anche se è quella di oggi — nel centro storico di
+  Modena si espone dalle 00:00 alle 07:00, e a mezzogiorno oggi è già andato;
 - una sera ancora aperta **resta**, anche se è quella di ieri — a Bologna alle due di
   notte il sacco va ancora messo fuori. È l'unico caso in cui l'elenco comincia prima di `da`;
 - di ogni sera restano **solo le frazioni non scadute**, esattamente come in *Da esporre stasera*.
 
-La prima voce di `giorni` è sempre la stessa sera che racconta *Da esporre stasera*: le due
-entità non possono dire cose diverse, perché guardano lo stesso elenco.
+Finché per stasera c'è qualcosa da esporre, la prima voce di `giorni` è la stessa sera che
+racconta *Da esporre stasera*: guardano lo stesso elenco e non possono dire cose diverse.
+Quando stasera non tocca, le due divergono **di proposito**: *Da esporre stasera* dice
+`nessuna`, mentre `giorni` è già passato alla prima sera utile, che è il suo mestiere.
 
 ### I calendari a colori
 
@@ -161,8 +169,9 @@ inventato: arriva dal campo `pittogramma.colore` dell'API.
 | Imballaggi in plastica | `#FDB913` |
 
 Lattine e plastica hanno lo stesso colore perché il gestore le fa esporre insieme.
-I colori li disegna Home Assistant **dalla 2026.6** in poi; sulle versioni precedenti i
-calendari separati funzionano lo stesso, semplicemente senza tinta.
+I colori li disegna Home Assistant **dalla 2026.2** in poi — `CalendarEntity.initial_color`
+non esiste nella 2026.1 ed esiste nella 2026.2 — e sulla 2026.1, che è il minimo che questa
+integrazione dichiara, i calendari separati funzionano lo stesso, semplicemente senza tinta.
 
 ### Un sensore per ogni frazione
 
@@ -211,15 +220,15 @@ della quale sia vietato esporre.
 
 ## L'orario di esposizione, che cambia da comune a comune
 
-Questo è il punto in cui è più facile sbagliare, e l'integrazione lo tratta in tre modi
-perché il gestore lo dichiara in tre modi. Sono tutti e tre verificati sul backend:
+Questo è il punto in cui è più facile sbagliare, e l'integrazione lo tratta in quattro modi
+perché il gestore lo dichiara in quattro modi. Sono tutti e quattro verificati sul backend:
 
 | Come lo dichiara il gestore | Esempio | Che cosa ne fa l'integrazione |
 |---|---|---|
 | Finestra dentro la giornata | **Padova** `20:00 → 24:00` | Evento dalle 20:00 alla mezzanotte |
 | Finestra che **scavalca la mezzanotte** | **Bologna** `20:00 → 06:00` | Evento fino alle 06:00 **del giorno dopo**; alle due di notte il sensore è ancora acceso |
 | Inizio uguale a fine, testo *«entro le…»* | **Faenza** `04:00 → 04:00`, *«entro le 04:00»* | È una **scadenza**, non una durata: l'evento resta giornaliero e la frase esatta del gestore finisce nella descrizione |
-| Inizio uguale a fine, testo *«dalle…»* | `20:00 → 20:00`, *«dalle 20:00»* | È un'**apertura** senza chiusura dichiarata: le 20:00 valgono come inizio, ma l'evento resta giornaliero |
+| Inizio uguale a fine, testo *«dalle…»* | `20:00 → 20:00`, *«dalle 20:00»* | È un'**apertura** senza chiusura dichiarata: l'evento va dalle 20:00 a mezzanotte, che è la scadenza che l'integrazione usa ovunque quando il gestore non ne dichiara una |
 
 Gli ultimi due casi hanno la stessa forma numerica e significato opposto: a distinguerli è
 **il testo che scrive il gestore**, non un'ipotesi. Censendo il backend, la forma
@@ -331,9 +340,10 @@ E se traslochi, **Riconfigura** cambia indirizzo senza perdere la cronologia.
 |---|---|---|
 | Un calendario per ogni frazione | spento | Aggiunge un'entità calendario per frazione, col colore ufficiale |
 | Un sensore per ogni frazione | spento | Aggiunge un sensore per frazione: la data della **sua** prossima esposizione |
-| Giorni da guardare in avanti | 365 | Fra due raccolte del **vetro** possono passare 35 giorni: con un orizzonte corto sparisce |
+| Giorni da guardare in avanti | 365 (fra 30 e 365) | Fra due raccolte del **vetro** possono passare 35 giorni: con un orizzonte corto sparisce |
 
-> C'era una terza opzione, «Eventi con la finestra oraria», ed è stata **tolta**. Non era
+> Le opzioni erano quattro. La quarta, «Eventi con la finestra oraria» — l'unica accesa di
+> serie — è stata **tolta**. Non era
 > più una preferenza estetica da quando lo **stato** del calendario è diventato la risposta
 > a «si può esporre adesso»: con gli eventi giornalieri quella riga avrebbe detto «Si può
 > esporre» alle nove del mattino. Dove il gestore non dichiara nessun orario gli eventi
@@ -342,6 +352,10 @@ E se traslochi, **Riconfigura** cambia indirizzo senza perdere la cronologia.
 ## Automazioni
 
 ### Il promemoria della sera
+
+Le 19:30 valgono per Padova Q2, dove la finestra apre alle 19:00: **scegli l'ora guardando
+la tua**, o dove il gestore apre di notte la condizione sarà sempre falsa e non arriverà
+mai niente, senza nessun errore.
 
 ```yaml
 automation:
@@ -365,8 +379,12 @@ automation:
 
 ### All'apertura vera della finestra
 
-Con gli eventi orari attivi, il trigger scatta all'ora che dice **il gestore** — non a un
-orario scelto da te. A Padova sono le 20:00, a Bologna pure, a Ferrara le 07:00.
+Il trigger scatta all'ora che dice **il gestore** — non a un orario scelto da te. A Padova
+Q2 sono le 19:00, in altri quartieri le 20:00, a Ferrara le 07:00.
+
+> Il calendario ha un evento **per frazione**: in una sera con due frazioni questo trigger
+> scatta due volte, e arrivano due notifiche. Se ne vuoi una sola, usa il promemoria a
+> orario fisso qui sopra, che legge l'elenco già unito.
 
 ```yaml
 automation:
@@ -374,7 +392,7 @@ automation:
     triggers:
       - trigger: calendar
         event: start
-        entity_id: calendar.CAMBIAMI_raccolta
+        entity_id: calendar.CAMBIAMI_calendario_esposizioni
         offset: "-00:30:00"   # mezz'ora prima
     actions:
       - action: notify.mobile_app_CAMBIAMI
@@ -384,6 +402,10 @@ automation:
 ```
 
 ### Un annuncio vocale solo se qualcuno è in casa
+
+*Esposizione stasera* si accende a **mezzanotte**, non all'apertura della finestra: con
+questo trigger l'altoparlante parla alle 00:00. Se lo vuoi a un'ora civile, aggiungi una
+condizione `time` oppure fai scattare l'annuncio sul calendario, come qui sopra.
 
 ```yaml
 automation:
@@ -435,7 +457,7 @@ cards:
 
 ```yaml
 type: calendar
-title: Raccolte in settimana
+title: La settimana dei rifiuti
 initial_view: listWeek
 entities:
   - calendar.CAMBIAMI_calendario_esposizioni
@@ -460,13 +482,14 @@ Quattro cose che si vedono solo sul vetro:
 - **Senza `initial_view: listWeek` esce il mese**, che è il valore di serie della card.
 - **Dal telefono non serve nemmeno la card**: il pannello **Calendario** in barra
   laterale apre già in vista settimanale quando lo schermo è stretto.
-- **La finestra della card è la stessa del sensore** — da oggi a oggi + 7 — quindi le
-  due non possono raccontare settimane diverse ai bordi. Non è un'opzione della card:
-  Home Assistant ridefinisce `listWeek` come «lista di 7 giorni a partire da oggi».
-- **La card non sa che una sera è scaduta.** Dove la finestra finisce prima di
-  mezzanotte — Modena espone dalle 00:00 alle 07:00 — dalle sette a mezzanotte la riga
-  resta lì mentre il sensore l'ha già tolta. In quel caso **ha ragione il sensore**:
-  tienigli accanto *Da esporre stasera*.
+- **La finestra della card è la stessa dell'attributo `giorni`** — da oggi ai sei giorni
+  seguenti — quindi la card e gli attributi della stessa entità non possono raccontare
+  settimane diverse ai bordi. Non è un'opzione della card: Home Assistant ridefinisce
+  `listWeek` come «lista di 7 giorni a partire da oggi».
+- **La card non sa che una sera è scaduta.** Dove la finestra finisce prima di mezzanotte —
+  nel centro storico di Modena si espone dalle 00:00 alle 07:00 — dalle sette a mezzanotte
+  la riga resta lì, mentre l'attributo `giorni` l'ha già tolta. In quel caso **hanno ragione
+  gli attributi**: tieni accanto alla card *Da esporre stasera*.
 
 Vuoi ogni riga **col colore ufficiale** del gestore? Accendi «Un calendario per ogni
 frazione» nelle opzioni ed elenca quelli, **senza** il calendario complessivo — se
@@ -474,7 +497,7 @@ metti tutti e due, ogni riga compare due volte:
 
 ```yaml
 type: calendar
-title: Raccolte in settimana
+title: La settimana dei rifiuti
 initial_view: listWeek
 entities:
   - calendar.CAMBIAMI_organico
@@ -527,8 +550,8 @@ https://webapp-ambiente.gruppohera.it/rifiutologo/rifiutologoweb/
 
 Il calendario viene chiesto **due volte al giorno**: è un calendario annuale, cambia qualche
 volta l'anno, e non c'è motivo di disturbare il gestore più spesso. Le entità si ricalcolano da
-sole a mezzanotte **e alla chiusura della finestra di esposizione**, così «stasera» resta
-«stasera» senza altre chiamate.
+sole a mezzanotte **e a ogni apertura e chiusura di finestra**, così «stasera» resta
+«stasera» — e «si può esporre» diventa vero all'ora giusta — senza altre chiamate.
 
 ### Provare un indirizzo prima di installare
 
