@@ -353,6 +353,49 @@ async def test_orari_diversi_per_frazione(
     assert datetime.fromisoformat(prossima.state).astimezone(ROMA).hour == 18
 
 
+async def test_una_frazione_sola_non_parla_per_tutte(
+    hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
+) -> None:
+    """Se una frazione dichiara l'orario e l'altra no, lo scalare tace.
+
+    E' il caso che sfugge: la mappa `orari_esposizione` lascia fuori chi non
+    dichiara niente, quindi un solo orario dichiarato sarebbe "unanime" per
+    distrazione, e il README promette invece che lo scalare vale per TUTTE le
+    frazioni della sera.
+    """
+    grezzo = carica("calendario")
+    giorno = grezzo["calendario"][0]
+    muto = json.loads(json.dumps(giorno["conferimenti"][0]))
+    muto["macroprodotto"] = {
+        "id": 68,
+        "descrizione": "Carta",
+        "pittogramma": {"nomeFile": "x", "colore": "0093D0"},
+    }
+    muto.pop("orario", None)
+    muto.pop("nota", None)
+    giorno["conferimenti"].append(muto)
+
+    registra(aioclient_mock)
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{BASE_URL}/getComuni.php", json=carica("comuni"))
+    aioclient_mock.get(f"{BASE_URL}/getIndirizzi.php", json=carica("indirizzi"))
+    aioclient_mock.get(f"{BASE_URL}/getNumeriCivici.php", json=carica("civici"))
+    aioclient_mock.get(f"{BASE_URL}/getCalendarioPap.php", json=grezzo)
+    aioclient_mock.get(f"{BASE_URL}/getAllegatiPap.php", json=carica("allegati"))
+
+    freezer.move_to(datetime(2026, 9, 3, 21, 0, tzinfo=ROMA))
+    await _avvia(hass, voce)
+
+    binario = _stato(hass, voce, "binary_sensor", "esporre_stasera")
+    assert set(binario.attributes["frazioni"]) == {"Organico", "Carta"}
+    # Una parla, l'altra no: non e' unanimita'.
+    assert binario.attributes["orario_esposizione"] is None
+    # E la mappa continua a dire la verita' su chi l'ha dichiarato.
+    assert binario.attributes["orari_esposizione"] == {
+        "Organico": "dalle 20:00 alle 24:00"
+    }
+
+
 async def test_calendari_per_frazione_spariscono_dal_registro(
     hass: HomeAssistant, aioclient_mock, voce: MockConfigEntry, freezer
 ) -> None:

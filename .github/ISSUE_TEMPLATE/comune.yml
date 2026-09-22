@@ -21,8 +21,10 @@ body:
       description: >-
         `python3 scripts/prova_api.py <Comune> "<VIA>" <civico> --anonimo`
         Con `--anonimo` via, civico e identificativi non compaiono
-        nell'uscita: puoi incollarla cosi' com'e'. Serve solo aiohttp,
-        non Home Assistant.
+        nell'uscita - nemmeno se l'indirizzo non viene trovato. Restano il
+        comune e la zona di raccolta, che servono a capire di quale calendario
+        si parla: puoi incollarla cosi' com'e'. Serve solo aiohttp, non Home
+        Assistant.
       render: shell
     validations:
       required: true

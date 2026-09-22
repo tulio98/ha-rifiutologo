@@ -790,7 +790,7 @@ async def test_il_confine_conosce_ogni_singola_apertura() -> None:
 
 
 FORME_DEL_GESTORE = (
-    ("Padova: finestra regolare", "19:00", "24:00", "dalle 19:00 alle 24:00"),
+    ("Padova: finestra regolare", "20:00", "24:00", "dalle 20:00 alle 24:00"),
     ("Bologna: scavalca la mezzanotte", "20:00", "06:00", "dalle 20:00 alle 06:00"),
     ("Faenza: un termine", "04:00", "04:00", "entro le 04:00"),
     ("apertura senza chiusura", "20:00", "20:00", "dalle 20:00"),

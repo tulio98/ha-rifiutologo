@@ -21,7 +21,7 @@ body:
     id: versioni
     attributes:
       label: Versione di Home Assistant e dell'integrazione
-      placeholder: "HA 2026.9.0 — Il Rifiutologo 0.1.0"
+      placeholder: "HA 2026.9.0 — Il Rifiutologo 0.6.4"
     validations:
       required: true
   - type: textarea

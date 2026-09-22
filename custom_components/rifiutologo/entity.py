@@ -49,11 +49,17 @@ class RifiutologoEntity(CoordinatorEntity[RifiutologoCoordinator]):
         )
 
 
-def _concorde(valori: dict[str, str]) -> str | None:
-    """Il valore comune a tutte le frazioni, oppure None se non concordano.
+def _concorde(valori: dict[str, str], frazioni: list[str]) -> str | None:
+    """Il valore comune a TUTTE le frazioni, oppure None.
 
     Meglio nessun orario che un orario che vale solo per una frazione su tre.
+    Due modi di non concordare, e contano entrambi: le frazioni dichiarano
+    valori diversi, oppure qualcuna non dichiara niente - `orari_per_frazione`
+    lascia fuori chi non ha l'orario, quindi senza il confronto con l'elenco
+    delle frazioni una sola che parla per tutte passerebbe per unanime.
     """
+    if len(valori) != len(frazioni):
+        return None
     distinti = set(valori.values())
     return distinti.pop() if len(distinti) == 1 else None
 
@@ -113,17 +119,18 @@ def attributi_giorno(giorno: GiornoRaccolta | None, oggi: date) -> dict[str, Any
         "fine_esposizione": chiusura(giorno).isoformat(),
         # Il gestore dichiara la finestra in cui si ESPONE, non quella in cui
         # passa il camion: sono due cose diverse e vanno tenute distinte.
-        # Lo scalare c'e' solo quando tutte le frazioni della sera concordano;
-        # la mappa dice sempre la verita', frazione per frazione.
-        "orario_esposizione": _concorde(orari),
+        # Lo scalare c'e' solo quando TUTTE le frazioni della sera lo
+        # dichiarano e concordano; la mappa dice sempre la verita', frazione
+        # per frazione.
+        "orario_esposizione": _concorde(orari, giorno.frazioni),
         "orari_esposizione": orari,
-        "orario_raccolta": _concorde(orari_raccolta),
+        "orario_raccolta": _concorde(orari_raccolta, giorno.frazioni),
         "orari_raccolta": orari_raccolta,
         "straordinario": any(c.straordinario for c in giorno.conferimenti),
         # Anche la nota va per frazione: su una sera con piu' frazioni capita
         # spesso che appartenga a una sola, e prendere la prima non nulla la
         # faceva valere per tutte.
-        "note": _concorde(note),
+        "note": _concorde(note, giorno.frazioni),
         "note_per_frazione": note,
     }
 
@@ -350,7 +357,8 @@ def rimuovi_entita_ritirate(hass: HomeAssistant, entry: RifiutologoConfigEntry) 
 
     Si confronta l'unique_id ESATTO, non un prefisso come fa
     `_rimuovi_per_frazione`: "prossima_" si porterebbe via anche
-    `prossima_esposizione`, che invece resta ed e' una delle tre che si vedono.
+    `prossima_esposizione`, che invece resta ed e' una delle quattro accese di
+    serie.
 
     Idempotente: dal secondo avvio non trova piu' niente da togliere.
     """

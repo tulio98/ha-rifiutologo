@@ -188,7 +188,7 @@ def costruisci_eventi(
     """Trasforma il calendario del gestore in eventi di Home Assistant.
 
     L'evento copre la finestra di ESPOSIZIONE dichiarata dal gestore, che e' la
-    cosa che serve per farsi avvisare in tempo: a Padova dalle 19:00 alle 24:00,
+    cosa che serve per farsi avvisare in tempo: a Padova dalle 20:00 alle 24:00,
     a Bologna dalle 20:00 alle 06:00 del mattino dopo.
 
     Non e' piu' una preferenza. C'era un'opzione per costruirli giornalieri, ed

@@ -9,7 +9,10 @@ davvero la raccolta porta a porta? Circa un indirizzo su tre, a Padova, non ce
 l'ha, e in quel caso nessuna integrazione potra' mostrare un calendario.
 
 Con `--anonimo` l'uscita non contiene ne' la via ne' il civico ne' i loro
-identificativi: e' la forma da allegare a una segnalazione.
+identificativi, nemmeno quando l'indirizzo non viene trovato e il programma
+ripete cio' che hai scritto. Restano il comune e la zona di raccolta, che
+servono a capire di quale calendario si sta parlando: e' la forma da allegare
+a una segnalazione.
 
 Serve solo aiohttp. Il client viene caricato per percorso, non come parte del
 package, proprio per non tirarsi dietro Home Assistant.
@@ -83,19 +86,26 @@ async def principale(
             (v for v in vie if v.nome.casefold() == via_cercata.casefold()), None
         )
         if via is None:
+            # Anche qui passa da `riservato`: e' il caso in cui si apre una
+            # segnalazione, e cio' che l'utente ha digitato E' la sua via.
             simili = [
                 v.nome for v in vie if via_cercata.casefold() in v.nome.casefold()
             ]
-            print(f"via '{via_cercata}' non trovata. Forse: {simili[:10]}")
+            print(
+                f"via '{riservato(via_cercata)}' non trovata. "
+                f"Forse: {riservato(str(simili[:10]))}"
+            )
             return 1
         print(f"via: {riservato(via.nome)} id={riservato(str(via.id))}")
 
         civici = await client.civici(comune.id, via.id)
         civico = next((c for c in civici if c.numero == civico_cercato), None)
         if civico is None:
+            # L'elenco dei civici di una via e' altrettanto parlante del civico
+            # stesso: con `--anonimo` non esce nessuno dei due.
             print(
-                f"civico '{civico_cercato}' non trovato. Disponibili: "
-                f"{[c.numero for c in civici][:30]}"
+                f"civico '{riservato(civico_cercato)}' non trovato. Disponibili: "
+                f"{riservato(str([c.numero for c in civici][:30]))}"
             )
             return 1
         print(f"civico: {riservato(civico.numero)} id={riservato(str(civico.id))}")

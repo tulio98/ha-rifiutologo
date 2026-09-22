@@ -64,8 +64,9 @@ CAMPO_COMUNE = "comune"
 CAMPO_VIA = "via"
 CAMPO_CIVICO = "civico"
 
-# Basta un mese per capire se un indirizzo ha il porta a porta: la verifica in
-# fondo al flusso non deve far aspettare l'utente piu' del necessario.
+# Quaranta giorni bastano per capire se un indirizzo ha il porta a porta -
+# anche il vetro, che e' la frazione piu' rada, passa almeno una volta - e la
+# verifica in fondo al flusso non deve far aspettare l'utente piu' del dovuto.
 GIORNI_DI_VERIFICA = 40
 
 
@@ -341,8 +342,8 @@ def _tendina(opzioni: list[SelectOptionDict]) -> SelectSelector:
 
     La ricerca e' fuzzy e non guarda da dove comincia la parola
     (`ignoreLocation: true` in `fuseMultiTerm.ts`), quindi "bernardo" trova
-    "VIA BERNARDO TREVISAN" - che e' il punto, visto che a Padova duemila vie
-    su duemiladuecento cominciano con "VIA". I termini separati da spazio
+    "VIA BERNARDO TREVISAN" - che e' il punto, visto che a Padova 1.859 vie su
+    2.200 cominciano con "VIA" (contate oggi sull'API). I termini separati da spazio
     devono corrispondere tutti, quindi funziona anche "bernardo trevisan".
 
     `sort=False` perche' l'ordine se lo sono gia' dato i chiamanti, sul nome.

@@ -245,8 +245,8 @@ def prossima_raccolta(
       giorni" mentre il sensore dell'esposizione e' gia' spento da ore: due
       entita' dello stesso dispositivo che si contraddicono.
     - la data non passata. Senza, dove la finestra scavalca la mezzanotte
-      risponderebbe ieri, e un sensore che si chiama "prossima raccolta" con
-      device_class DATE non puo' pubblicare una data passata.
+      risponderebbe ieri, e un sensore per frazione con device_class DATE non
+      puo' pubblicare una data passata.
     """
     if calendario is None:
         return None

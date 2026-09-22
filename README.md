@@ -43,7 +43,8 @@ Per ogni indirizzo configurato nasce un dispositivo con queste entità:
 | **Zona di raccolta** (`sensor`) | `Calendario Padova Q6 2026` | Controllare di aver preso il calendario giusto (diagnostica, disattivata di serie) |
 
 Quattro sono accese di serie e rispondono a quattro domande diverse; la quinta, *Zona di
-raccolta*, è diagnostica e nasce spenta. Stasera alle 20:20, a Padova Q2, la pagina dice:
+raccolta*, è diagnostica e nasce spenta. Stasera alle 21:00, con la finestra aperta da
+un'ora, la pagina dice:
 
 ```text
 Calendario esposizioni ........ Si può esporre
@@ -104,13 +105,13 @@ stessa sera fanno una voce sola.
 
 | Attributo | Contenuto |
 |---|---|
-| `calendario` | **il calendario della settimana, da leggere a occhio**: `mer 16/09 → Indifferenziato, Organico` |
+| `calendario` | **il calendario della settimana, da leggere a occhio**: `mar 15/09 → Indifferenziato, Organico` |
 | `da` / `a` | i due estremi della finestra: oggi e oggi più sei giorni |
 | `frazioni` | tutte quelle che compaiono nella settimana, nell'ordine in cui capitano |
 | `giorni` | una voce per sera, **con gli stessi attributi della tabella qui sopra** |
 
-`calendario` è un dizionario **piatto**, e la forma non è un capriccio. Aprendo l'entità,
-Home Assistant disegna così un attributo fatto di dizionari — cioè `giorni`:
+`calendario` è un dizionario **piatto**, e la forma non è un capriccio. Nella schermata dei
+dettagli, Home Assistant disegna così un attributo fatto di dizionari — cioè `giorni`:
 
 ```text
 - frazioni:
@@ -118,17 +119,17 @@ Home Assistant disegna così un attributo fatto di dizionari — cioè `giorni`:
     - Organico
   colori:
     Indifferenziato: '#7C7C81'
-  data: '2026-09-16'
+  data: '2026-09-15'
   …altre dodici righe, per UN giorno
 ```
 
 e così un dizionario piatto — cioè `calendario`:
 
 ```text
-mer 16/09: Indifferenziato, Organico
-ven 18/09: Organico
-dom 20/09: Carta
-lun 21/09: Organico
+gio 10/09: Organico
+dom 13/09: Organico
+lun 14/09: Imballaggi in vetro
+mar 15/09: Indifferenziato, Organico
 ```
 
 Una lista di stringhe finirebbe tutta su una riga sola, unita da virgole: il dizionario
@@ -182,7 +183,7 @@ integrazione dichiara, i calendari separati funzionano lo stesso, semplicemente 
 
 Attivando **«Un sensore per ogni frazione»** nasce un sensore per tipo di rifiuto — a
 Padova sei: *Organico*, *Indifferenziato*, *Carta*, *Lattine*, *Imballaggi in plastica*,
-*Imballaggi in vetro*. Risponde alla domanda che il calendario complessivo non risponde:
+*Imballaggi in vetro*. Risponde alla domanda a cui il calendario complessivo non risponde:
 **e il vetro quando passa?**
 
 Lo stato è la data della prossima esposizione di quella frazione (`device_class: date`).
@@ -209,7 +210,7 @@ Per sapere se stanotte si è ancora in tempo c'è *Esposizione stasera*.
 | | Si accende | Si spegne | Risponde a |
 |---|---|---|---|
 | **Esposizione stasera** (`binary_sensor`) | a mezzanotte del giorno di raccolta | quando l'ultima finestra si chiude | «oggi tocca, e sono ancora in tempo?» |
-| **Calendario esposizioni** (`calendar`) | all'ora dichiarata dal gestore (19:00, 20:00…) | alla stessa ora dell'altro | «posso uscire **adesso**?» |
+| **Calendario esposizioni** (`calendar`) | all'ora dichiarata dal gestore (19:00, 20:00…) | quando la finestra si chiude, come l'altro | «posso uscire **adesso**?» |
 
 Alle sei di sera del giorno della carta il primo dice sì e il secondo dice no — ed è la
 risposta giusta: il sacco fuori a quell'ora è fuori regolamento.
@@ -325,9 +326,9 @@ Tre passi, tutti con una **casella di ricerca**, tutti alimentati dall'elenco ve
 2. **Via** — a Padova sono 2200: **si cercano, non si scorrono**
 3. **Civico** — sono stringhe: esistono `1/A`, `1/SNC`, `2/2`
 
-Scrivi **qualunque pezzo** del nome, anche in mezzo: `bernardo` trova `VIA BERNARDO
-TREVISAN`, e `bernardo trevisan` pure. Serve, perché a Padova quasi tutte le vie cominciano con «VIA» e una
-ricerca che guardasse solo l'inizio non filtrerebbe niente.
+Scrivi **qualunque pezzo** del nome, anche in mezzo: `bernardo` trova
+`VIA BERNARDO TREVISAN`, e `bernardo trevisan` pure. Serve, perché a Padova 1.859 vie su
+2.200 cominciano con «VIA», e una ricerca ancorata all'inizio non filtrerebbe niente.
 
 > Se scrivi qualcosa che nell'elenco del gestore non c'è, l'integrazione **te lo dice**
 > invece di ripresentarti il modulo in silenzio. Il campo è cercabile, non libero.
@@ -345,29 +346,29 @@ E se traslochi, **Riconfigura** cambia indirizzo senza perdere la cronologia.
 |---|---|---|
 | Un calendario per ogni frazione | spento | Aggiunge un'entità calendario per frazione, col colore ufficiale |
 | Un sensore per ogni frazione | spento | Aggiunge un sensore per frazione: la data della **sua** prossima esposizione |
-| Giorni da guardare in avanti | 365 (fra 30 e 365) | Fra due raccolte del **vetro** possono passare 35 giorni: con un orizzonte corto sparisce |
+| Giorni da guardare in avanti | 365 (fra 30 e 365) | Fra due raccolte del **vetro** passano dai 28 ai 63 giorni — nel 2026, all'indirizzo dell'esempio, fra il 18 maggio e il 20 luglio non passa mai: con un orizzonte corto sparisce |
 
 > Le opzioni erano quattro. La quarta, «Eventi con la finestra oraria» — l'unica accesa di
-> serie — è stata **tolta**. Non era
-> più una preferenza estetica da quando lo **stato** del calendario è diventato la risposta
-> a «si può esporre adesso»: con gli eventi giornalieri quella riga avrebbe detto «Si può
-> esporre» alle nove del mattino. Dove il gestore non dichiara nessun orario gli eventi
-> restano giornalieri da soli, che è l'unico caso in cui aveva senso.
+> serie — è stata **tolta**. Da quando lo **stato** del calendario risponde a «si può
+> esporre adesso», non era più una preferenza estetica: con gli eventi giornalieri quella
+> riga avrebbe detto «Si può esporre» alle nove del mattino. Dove il gestore non dichiara
+> nessun orario gli eventi restano giornalieri da soli, che è l'unico caso in cui aveva
+> senso.
 
 ## Automazioni
 
 ### Il promemoria della sera
 
-Le 19:30 valgono per Padova Q2, dove la finestra apre alle 19:00: **scegli l'ora guardando
-la tua**, o dove il gestore apre di notte la condizione sarà sempre falsa e non arriverà
-mai niente, senza nessun errore.
+Le 20:30 valgono dove la finestra apre alle 20:00: **scegli l'ora guardando la tua**.
+Altrimenti, dove il gestore apre di notte, la condizione sarà sempre falsa e non arriverà
+mai niente — senza nessun errore che te lo dica.
 
 ```yaml
 automation:
   - alias: "Rifiuti - promemoria della sera"
     triggers:
       - trigger: time
-        at: "19:30:00"
+        at: "20:30:00"
     conditions:
       - condition: state
         entity_id: binary_sensor.CAMBIAMI_esposizione_stasera
@@ -385,7 +386,7 @@ automation:
 ### All'apertura vera della finestra
 
 Il trigger scatta all'ora che dice **il gestore** — non a un orario scelto da te. A Padova
-Q2 sono le 19:00, in altri quartieri le 20:00, a Ferrara le 07:00.
+sono le 20:00, in qualche quartiere le 19:00, a Ferrara le 07:00.
 
 > Il calendario ha un evento **per frazione**: in una sera con due frazioni questo trigger
 > scatta due volte, e arrivano due notifiche. Se ne vuoi una sola, usa il promemoria a
@@ -469,14 +470,13 @@ entities:
 ```
 
 ```text
-venerdì                                    11 settembre 2026
-  19:00 - 00:00   ●  Organico
-domenica                                   13 settembre 2026
-  19:00 - 00:00   ●  Lattine
-  19:00 - 00:00   ●  Imballaggi in plastica
-mercoledì                                  16 settembre 2026
-  19:00 - 00:00   ●  Indifferenziato
-  19:00 - 00:00   ●  Organico
+giovedì                                    10 settembre 2026
+  20:00 - 00:00   ●  Organico
+lunedì                                     14 settembre 2026
+  20:00 - 00:00   ●  Imballaggi in vetro
+martedì                                    15 settembre 2026
+  20:00 - 00:00   ●  Indifferenziato
+  20:00 - 00:00   ●  Organico
 ```
 
 I giorni senza raccolta non compaiono, i nomi dei giorni sono nella **lingua di Home
@@ -549,7 +549,7 @@ https://webapp-ambiente.gruppohera.it/rifiutologo/rifiutologoweb/
     getComuni.php
     getIndirizzi.php?idComune=
     getNumeriCivici.php?idComune=&idIndirizzo=
-    getCalendarioPap.php?idComune=&idIndirizzo=&idCivico=&isBusiness=0&date=&giorniDaMostrare=
+    getCalendarioPap.php?idComune=&idIndirizzo=&idCivico=&isBusiness=0&idCategoriaAzienda=0&date=&giorniDaMostrare=
     getAllegatiPap.php?idComune=&idIndirizzo=&idCivico=&isBusiness=0
 ```
 
@@ -568,8 +568,10 @@ python3 scripts/prova_api.py Padova "VIA BERNARDO TREVISAN" 8
 
 Ti dice se quell'indirizzo ha il porta a porta, in quale zona sei, quali frazioni sono
 previste, **che genere di orario dichiara il gestore** e quando sono le prossime otto
-esposizioni. Con `--anonimo` via, civico e identificativi non compaiono nell'uscita: è la
-forma da allegare a una segnalazione.
+esposizioni. Con `--anonimo` via, civico e identificativi non compaiono nell'uscita —
+nemmeno quando l'indirizzo non viene trovato e il programma ripete quello che hai scritto.
+Restano il comune e la zona, che servono a capire di quale calendario si parla: è la forma
+da allegare a una segnalazione.
 
 ## Limiti, e cose da sapere
 
@@ -601,6 +603,7 @@ quello la segnalazione non serve a niente. Nei **log**, invece, l'indirizzo comp
 `entity_id`: se ne alleghi, guardali prima.
 
 ```bash
+pip install -r requirements-test.txt
 ruff check . && ruff format --check . && pytest
 ```
 

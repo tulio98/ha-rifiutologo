@@ -175,9 +175,9 @@ class SensoreFrazione(_SensoreBase):
     """Quando tocca a UNA frazione: la domanda "e il vetro quando passa?".
 
     Lo stato e' la data della prossima esposizione di quella frazione, e come
-    "Prossima raccolta" non guarda mai indietro: un sensore con device_class
+    "Inizio esposizione" non guarda mai indietro: un sensore con device_class
     DATE che pubblica ieri e' un sensore che mente. Chi vuole sapere se si e'
-    ancora in tempo stanotte usa "Raccolta stasera", che quel mestiere lo fa.
+    ancora in tempo stanotte usa "Esposizione stasera", che quel mestiere lo fa.
     """
 
     _attr_device_class = SensorDeviceClass.DATE

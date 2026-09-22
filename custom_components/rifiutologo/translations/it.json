@@ -58,7 +58,7 @@
           "giorni_da_mostrare": "Giorni da guardare in avanti"
         },
         "data_description": {
-          "calendari_per_frazione": "Aggiunge un'entità calendario per ogni frazione, ciascuna col colore ufficiale del gestore. I colori li mostra Home Assistant dalla 2026.6 in poi.",
+          "calendari_per_frazione": "Aggiunge un'entità calendario per ogni frazione, ciascuna col colore ufficiale del gestore. I colori li mostra Home Assistant dalla 2026.2 in poi.",
           "sensori_per_frazione": "Aggiunge un sensore per ogni tipo di rifiuto: lo stato è la data della sua prossima esposizione, e negli attributi ci sono i giorni mancanti, il colore ufficiale e le prossime date.",
           "giorni_da_mostrare": "Fra due raccolte del vetro possono passare 35 giorni: un orizzonte corto rischia di nasconderlo."
         }
